@@ -1,7 +1,7 @@
 ﻿
-import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useState, type WheelEvent } from 'react'
+import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState, type WheelEvent } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { OrbitControls } from '@react-three/drei'
+import { GizmoHelper, GizmoViewport, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import './App.css'
 
@@ -266,6 +266,10 @@ function createDefaultDesign(): PersistedDesign {
   }
 }
 
+function cloneDesign(design: PersistedDesign): PersistedDesign {
+  return JSON.parse(JSON.stringify(design)) as PersistedDesign
+}
+
 function clampDoorToWall(door: Door, wall: WallDescriptor) {
   const maxWidth = Math.max(0.6, roundToGrid(wall.length - 0.2))
   const width = clamp(roundToGrid(door.width), 0.6, maxWidth)
@@ -371,6 +375,9 @@ function Scene3D({
       })}
 
       <OrbitControls makeDefault maxDistance={22} minDistance={3} />
+      <GizmoHelper alignment="bottom-right" margin={[84, 84]}>
+        <GizmoViewport axisColors={['#d06a35', '#3f6a52', '#7a4034']} labelColor="#f8f1e5" />
+      </GizmoHelper>
     </Canvas>
   )
 }
@@ -394,6 +401,10 @@ function App() {
   const [dragDraft, setDragDraft] = useState<DragDraft | null>(null)
   const [interaction, setInteraction] = useState<Interaction>(null)
   const [saveMessage, setSaveMessage] = useState('')
+  const [history, setHistory] = useState<PersistedDesign[]>([])
+  const [future, setFuture] = useState<PersistedDesign[]>([])
+  const lastSnapshotRef = useRef<string>('')
+  const skipHistoryRef = useRef(false)
 
   const roomWalls = useMemo(() => getRoomWalls(roomPoints, isRoomClosed, sceneStyle.roomWallColor), [isRoomClosed, roomPoints, sceneStyle.roomWallColor])
   const allWalls = useMemo(() => [...roomWalls, ...getFreeWalls(freeWalls)], [freeWalls, roomWalls])
@@ -451,6 +462,32 @@ function App() {
     }
   }, [doors, freeWalls, selected, stairs, surfaces])
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
+        event.preventDefault()
+        undo()
+      }
+
+      if (((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') || ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'z')) {
+        event.preventDefault()
+        redo()
+      }
+
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selected) {
+        const target = event.target as HTMLElement | null
+        if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) {
+          return
+        }
+        event.preventDefault()
+        deleteSelected()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  })
+
   const persistableDesign: PersistedDesign = {
     roomPoints,
     freeWalls,
@@ -462,6 +499,70 @@ function App() {
     wallThickness,
     viewBox,
     sceneStyle,
+  }
+
+  const applyDesign = (design: PersistedDesign) => {
+    setRoomPoints(design.roomPoints ?? [])
+    setFreeWalls(design.freeWalls ?? [])
+    setDoors(design.doors ?? [])
+    setSurfaces(design.surfaces ?? [])
+    setStairs(design.stairs ?? [])
+    setIsRoomClosed(design.isRoomClosed ?? false)
+    setWallHeight(design.wallHeight ?? 3.3)
+    setWallThickness(design.wallThickness ?? 0.18)
+    setViewBox(design.viewBox ?? { x: 0, y: 0, width: svgWidth, height: svgHeight })
+    setSceneStyle(design.sceneStyle ?? defaultSceneStyle)
+  }
+
+  useEffect(() => {
+    const snapshot = JSON.stringify(persistableDesign)
+
+    if (!lastSnapshotRef.current) {
+      lastSnapshotRef.current = snapshot
+      return
+    }
+
+    if (snapshot === lastSnapshotRef.current) {
+      return
+    }
+
+    if (skipHistoryRef.current) {
+      lastSnapshotRef.current = snapshot
+      skipHistoryRef.current = false
+      return
+    }
+
+    setHistory((current) => [...current.slice(-59), cloneDesign(JSON.parse(lastSnapshotRef.current) as PersistedDesign)])
+    setFuture([])
+    lastSnapshotRef.current = snapshot
+  }, [persistableDesign])
+
+  const undo = () => {
+    if (history.length === 0) {
+      return
+    }
+
+    const previous = history[history.length - 1]
+    skipHistoryRef.current = true
+    setHistory((current) => current.slice(0, -1))
+    setFuture((current) => [cloneDesign(persistableDesign), ...current])
+    applyDesign(cloneDesign(previous))
+    setSelected(null)
+    setSaveMessage('Undo aplicado.')
+  }
+
+  const redo = () => {
+    if (future.length === 0) {
+      return
+    }
+
+    const [next, ...rest] = future
+    skipHistoryRef.current = true
+    setFuture(rest)
+    setHistory((current) => [...current.slice(-59), cloneDesign(persistableDesign)])
+    applyDesign(cloneDesign(next))
+    setSelected(null)
+    setSaveMessage('Redo aplicado.')
   }
 
   const saveDesign = () => {
@@ -787,6 +888,11 @@ function App() {
 
         <div className="panel">
           <span className="section-label">Guardar</span>
+          <div className="button-stack">
+            <button disabled={history.length === 0} onClick={undo} type="button">Undo</button>
+            <button disabled={future.length === 0} onClick={redo} type="button">Redo</button>
+            <button className="danger" disabled={!selected} onClick={deleteSelected} type="button">Borrar seleccionado</button>
+          </div>
           <div className="button-stack">
             <button onClick={saveDesign} type="button">Guardar diseño</button>
             <button onClick={loadSavedDesign} type="button">Cargar guardado</button>

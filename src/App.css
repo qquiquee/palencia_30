@@ -1,20 +1,23 @@
 .app-shell {
   display: grid;
-  gap: 24px;
-  grid-template-columns: 360px minmax(0, 1fr);
-  min-height: 100vh;
-  padding: 24px;
-}
-
-.sidebar,
-.workspace {
-  min-height: 0;
+  gap: 12px;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  overflow: hidden;
+  padding: 12px;
 }
 
 .sidebar {
   display: flex;
-  flex-direction: column;
-  gap: 18px;
+  gap: 12px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+}
+
+.workspace {
+  min-height: 0;
 }
 
 .panel {
@@ -22,6 +25,7 @@
   border: 1px solid rgba(100, 73, 43, 0.14);
   border-radius: 24px;
   box-shadow: 0 18px 40px rgba(73, 46, 18, 0.08);
+  flex: 0 0 280px;
   padding: 20px;
 }
 
@@ -128,7 +132,7 @@ label {
   display: flex;
   gap: 18px;
   justify-content: space-between;
-  padding: 24px 24px 18px;
+  padding: 16px 20px 12px;
 }
 
 .stats span {
@@ -142,11 +146,10 @@ label {
 .canvas-card {
   flex: 1;
   overflow: hidden;
-  padding: 20px;
+  padding: 12px;
 }
 
 .canvas-card--three {
-  min-height: 680px;
   padding: 0;
 }
 
@@ -154,7 +157,6 @@ label {
   background: linear-gradient(180deg, rgba(255, 251, 245, 0.96), rgba(241, 230, 212, 0.96));
   border-radius: 24px;
   height: 100%;
-  max-height: 720px;
   width: 100%;
 }
 
@@ -304,10 +306,6 @@ label {
 
 @media (max-width: 1100px) {
   .app-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .canvas-card--three {
-    min-height: 520px;
+    padding: 10px;
   }
 }

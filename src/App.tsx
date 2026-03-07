@@ -270,6 +270,13 @@ function cloneDesign(design: PersistedDesign): PersistedDesign {
   return JSON.parse(JSON.stringify(design)) as PersistedDesign
 }
 
+function serializeForHistory(design: PersistedDesign) {
+  return JSON.stringify({
+    ...design,
+    viewBox: { x: 0, y: 0, width: svgWidth, height: svgHeight },
+  })
+}
+
 function clampDoorToWall(door: Door, wall: WallDescriptor) {
   const maxWidth = Math.max(0.6, roundToGrid(wall.length - 0.2))
   const width = clamp(roundToGrid(door.width), 0.6, maxWidth)
@@ -403,8 +410,13 @@ function App() {
   const [saveMessage, setSaveMessage] = useState('')
   const [history, setHistory] = useState<PersistedDesign[]>([])
   const [future, setFuture] = useState<PersistedDesign[]>([])
+  const [propertiesOpen, setPropertiesOpen] = useState(true)
   const lastSnapshotRef = useRef<string>('')
+  const lastDesignRef = useRef<PersistedDesign>(cloneDesign(initial))
+  const currentDesignRef = useRef<PersistedDesign>(cloneDesign(initial))
   const skipHistoryRef = useRef(false)
+  const gestureSnapshotRef = useRef<PersistedDesign | null>(null)
+  const importInputRef = useRef<HTMLInputElement | null>(null)
 
   const roomWalls = useMemo(() => getRoomWalls(roomPoints, isRoomClosed, sceneStyle.roomWallColor), [isRoomClosed, roomPoints, sceneStyle.roomWallColor])
   const allWalls = useMemo(() => [...roomWalls, ...getFreeWalls(freeWalls)], [freeWalls, roomWalls])
@@ -437,6 +449,7 @@ function App() {
       }
 
       setDragDraft(null)
+      queueMicrotask(() => commitGestureHistory())
     }
 
     window.addEventListener('pointerup', stopAll)
@@ -500,6 +513,7 @@ function App() {
     viewBox,
     sceneStyle,
   }
+  currentDesignRef.current = persistableDesign
 
   const applyDesign = (design: PersistedDesign) => {
     setRoomPoints(design.roomPoints ?? [])
@@ -514,11 +528,41 @@ function App() {
     setSceneStyle(design.sceneStyle ?? defaultSceneStyle)
   }
 
+  const beginGestureHistory = () => {
+    if (!gestureSnapshotRef.current) {
+      gestureSnapshotRef.current = cloneDesign(persistableDesign)
+    }
+  }
+
+  const commitGestureHistory = () => {
+    if (!gestureSnapshotRef.current) {
+      return
+    }
+
+    const before = gestureSnapshotRef.current
+    const currentDesign = cloneDesign(currentDesignRef.current)
+    const beforeSerialized = serializeForHistory(before)
+    const afterSerialized = serializeForHistory(currentDesign)
+
+    if (beforeSerialized !== afterSerialized) {
+      setHistory((current) => [...current.slice(-59), before])
+      setFuture([])
+      lastSnapshotRef.current = afterSerialized
+      lastDesignRef.current = currentDesign
+    } else if (!lastSnapshotRef.current) {
+      lastSnapshotRef.current = afterSerialized
+      lastDesignRef.current = currentDesign
+    }
+
+    gestureSnapshotRef.current = null
+  }
+
   useEffect(() => {
-    const snapshot = JSON.stringify(persistableDesign)
+    const snapshot = serializeForHistory(persistableDesign)
 
     if (!lastSnapshotRef.current) {
       lastSnapshotRef.current = snapshot
+      lastDesignRef.current = cloneDesign(persistableDesign)
       return
     }
 
@@ -528,14 +572,20 @@ function App() {
 
     if (skipHistoryRef.current) {
       lastSnapshotRef.current = snapshot
+      lastDesignRef.current = cloneDesign(persistableDesign)
       skipHistoryRef.current = false
       return
     }
 
-    setHistory((current) => [...current.slice(-59), cloneDesign(JSON.parse(lastSnapshotRef.current) as PersistedDesign)])
+    if (interaction || dragDraft) {
+      return
+    }
+
+    setHistory((current) => [...current.slice(-59), cloneDesign(lastDesignRef.current)])
     setFuture([])
     lastSnapshotRef.current = snapshot
-  }, [persistableDesign])
+    lastDesignRef.current = cloneDesign(persistableDesign)
+  }, [dragDraft, interaction, persistableDesign])
 
   const undo = () => {
     if (history.length === 0) {
@@ -549,6 +599,8 @@ function App() {
     applyDesign(cloneDesign(previous))
     setSelected(null)
     setSaveMessage('Undo aplicado.')
+    lastDesignRef.current = cloneDesign(previous)
+    lastSnapshotRef.current = serializeForHistory(previous)
   }
 
   const redo = () => {
@@ -563,6 +615,8 @@ function App() {
     applyDesign(cloneDesign(next))
     setSelected(null)
     setSaveMessage('Redo aplicado.')
+    lastDesignRef.current = cloneDesign(next)
+    lastSnapshotRef.current = serializeForHistory(next)
   }
 
   const saveDesign = () => {
@@ -578,18 +632,14 @@ function App() {
     }
 
     const saved = JSON.parse(raw) as PersistedDesign
-    setRoomPoints(saved.roomPoints ?? [])
-    setFreeWalls(saved.freeWalls ?? [])
-    setDoors(saved.doors ?? [])
-    setSurfaces(saved.surfaces ?? [])
-    setStairs(saved.stairs ?? [])
-    setIsRoomClosed(saved.isRoomClosed ?? false)
-    setWallHeight(saved.wallHeight ?? 3.3)
-    setWallThickness(saved.wallThickness ?? 0.18)
-    setViewBox(saved.viewBox ?? { x: 0, y: 0, width: svgWidth, height: svgHeight })
-    setSceneStyle(saved.sceneStyle ?? defaultSceneStyle)
+    skipHistoryRef.current = true
+    applyDesign(saved)
     setSelected(null)
     setTool('select')
+    setHistory([])
+    setFuture([])
+    lastDesignRef.current = cloneDesign(saved)
+    lastSnapshotRef.current = serializeForHistory(saved)
     setSaveMessage('Diseño cargado desde guardado local.')
   }
 
@@ -602,6 +652,27 @@ function App() {
     link.click()
     URL.revokeObjectURL(url)
     setSaveMessage('JSON descargado.')
+  }
+
+  const importDesignFile = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const saved = JSON.parse(String(reader.result)) as PersistedDesign
+        skipHistoryRef.current = true
+        applyDesign(saved)
+        setSelected(null)
+        setTool('select')
+        setHistory([])
+        setFuture([])
+        lastDesignRef.current = cloneDesign(saved)
+        lastSnapshotRef.current = serializeForHistory(saved)
+        setSaveMessage(`JSON importado: ${file.name}`)
+      } catch {
+        setSaveMessage('El archivo JSON no tiene un formato valido.')
+      }
+    }
+    reader.readAsText(file)
   }
 
   const resetScene = () => {
@@ -617,6 +688,18 @@ function App() {
     setTool('draw-room')
     setViewBox(clean.viewBox)
     setSceneStyle(clean.sceneStyle)
+    setHistory([])
+    setFuture([])
+    lastDesignRef.current = cloneDesign({
+      ...clean,
+      roomPoints: [],
+      freeWalls: [],
+      doors: [],
+      surfaces: [],
+      stairs: [],
+      isRoomClosed: false,
+    })
+    lastSnapshotRef.current = serializeForHistory(lastDesignRef.current)
     setSaveMessage('Lienzo reiniciado.')
   }
 
@@ -633,6 +716,10 @@ function App() {
     setTool('select')
     setViewBox(sample.viewBox)
     setSceneStyle(sample.sceneStyle)
+    setHistory([])
+    setFuture([])
+    lastDesignRef.current = cloneDesign(sample)
+    lastSnapshotRef.current = serializeForHistory(sample)
     setSaveMessage('Ejemplo cargado.')
   }
 
@@ -653,6 +740,7 @@ function App() {
     if (event.button === 1 || tool === 'pan') {
       const bounds = event.currentTarget.getBoundingClientRect()
       const pointer = pointToViewBox(event, viewBox, bounds)
+      beginGestureHistory()
       setInteraction({ type: 'pan', originPointer: pointer.meters, originViewBox: viewBox })
       return
     }
@@ -660,6 +748,7 @@ function App() {
     if (tool === 'surface' && event.button === 0) {
       const bounds = event.currentTarget.getBoundingClientRect()
       const pointer = pointToViewBox(event, viewBox, bounds)
+      beginGestureHistory()
       setDragDraft({ type: 'surface', start: pointer.meters, current: pointer.meters })
       return
     }
@@ -667,6 +756,7 @@ function App() {
     if (tool === 'stairs' && event.button === 0) {
       const bounds = event.currentTarget.getBoundingClientRect()
       const pointer = pointToViewBox(event, viewBox, bounds)
+      beginGestureHistory()
       setDragDraft({ type: 'stairs', start: pointer.meters, current: pointer.meters })
     }
   }
@@ -897,7 +987,15 @@ function App() {
             <button onClick={saveDesign} type="button">Guardar diseño</button>
             <button onClick={loadSavedDesign} type="button">Cargar guardado</button>
             <button onClick={downloadDesign} type="button">Descargar JSON</button>
+            <button onClick={() => importInputRef.current?.click()} type="button">Importar JSON</button>
           </div>
+          <input accept="application/json" className="hidden-input" onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file) {
+              importDesignFile(file)
+            }
+            event.currentTarget.value = ''
+          }} ref={importInputRef} type="file" />
           {saveMessage ? <p className="detail-text save-message">{saveMessage}</p> : null}
         </div>
 
@@ -927,63 +1025,6 @@ function App() {
           </label>
         </div>
 
-        <div className="panel">
-          <span className="section-label">Seleccion</span>
-          {selectedDoor ? (
-            <>
-              <p className="detail-text">Puerta en {selectedDoor.wallId}</p>
-              <label>Offset <input className="small-input" min="0.4" onChange={(event) => updateSelectedDoor({ offset: Number(event.target.value) })} step="0.1" type="number" value={selectedDoor.offset} /></label>
-              <label>Ancho <input className="small-input" min="0.6" onChange={(event) => updateSelectedDoor({ width: Number(event.target.value) })} step="0.1" type="number" value={selectedDoor.width} /></label>
-              <label>Color <input onChange={(event) => updateSelectedDoor({ color: event.target.value })} type="color" value={selectedDoor.color} /></label>
-              <button className="danger" onClick={deleteSelected} type="button">Eliminar puerta</button>
-            </>
-          ) : null}
-
-          {selectedWall ? (
-            <>
-              <p className="detail-text">Muro libre</p>
-              <label>Inicio X <input className="small-input" onChange={(event) => updateSelectedWall({ start: { ...selectedWall.start, x: Number(event.target.value) } })} step="0.1" type="number" value={selectedWall.start.x} /></label>
-              <label>Inicio Y <input className="small-input" onChange={(event) => updateSelectedWall({ start: { ...selectedWall.start, y: Number(event.target.value) } })} step="0.1" type="number" value={selectedWall.start.y} /></label>
-              <label>Fin X <input className="small-input" onChange={(event) => updateSelectedWall({ end: { ...selectedWall.end, x: Number(event.target.value) } })} step="0.1" type="number" value={selectedWall.end.x} /></label>
-              <label>Fin Y <input className="small-input" onChange={(event) => updateSelectedWall({ end: { ...selectedWall.end, y: Number(event.target.value) } })} step="0.1" type="number" value={selectedWall.end.y} /></label>
-              <label>Color <input onChange={(event) => updateSelectedWall({ color: event.target.value })} type="color" value={selectedWall.color} /></label>
-              <button className="danger" onClick={deleteSelected} type="button">Eliminar muro</button>
-            </>
-          ) : null}
-
-          {selectedSurface ? (
-            <>
-              <p className="detail-text">{selectedSurface.label}</p>
-              <label>Nombre <input onChange={(event) => updateSelectedSurface({ label: event.target.value })} type="text" value={selectedSurface.label} /></label>
-              <label>X <input className="small-input" onChange={(event) => updateSelectedSurface({ x: Number(event.target.value) })} step="0.1" type="number" value={selectedSurface.x} /></label>
-              <label>Y <input className="small-input" onChange={(event) => updateSelectedSurface({ y: Number(event.target.value) })} step="0.1" type="number" value={selectedSurface.y} /></label>
-              <label>Ancho <input className="small-input" onChange={(event) => updateSelectedSurface({ width: Number(event.target.value) })} step="0.1" type="number" value={selectedSurface.width} /></label>
-              <label>Fondo <input className="small-input" onChange={(event) => updateSelectedSurface({ depth: Number(event.target.value) })} step="0.1" type="number" value={selectedSurface.depth} /></label>
-              <label>Cota <input className="small-input" onChange={(event) => updateSelectedSurface({ elevation: Number(event.target.value) })} step="0.05" type="number" value={selectedSurface.elevation} /></label>
-              <label>Espesor <input className="small-input" onChange={(event) => updateSelectedSurface({ thickness: Number(event.target.value) })} step="0.05" type="number" value={selectedSurface.thickness} /></label>
-              <label>Color <input onChange={(event) => updateSelectedSurface({ color: event.target.value })} type="color" value={selectedSurface.color} /></label>
-              <button className="danger" onClick={deleteSelected} type="button">Eliminar superficie</button>
-            </>
-          ) : null}
-
-          {selectedStair ? (
-            <>
-              <p className="detail-text">{selectedStair.label}</p>
-              <label>Nombre <input onChange={(event) => updateSelectedStair({ label: event.target.value })} type="text" value={selectedStair.label} /></label>
-              <label>X <input className="small-input" onChange={(event) => updateSelectedStair({ x: Number(event.target.value) })} step="0.1" type="number" value={selectedStair.x} /></label>
-              <label>Y <input className="small-input" onChange={(event) => updateSelectedStair({ y: Number(event.target.value) })} step="0.1" type="number" value={selectedStair.y} /></label>
-              <label>Ancho <input className="small-input" onChange={(event) => updateSelectedStair({ width: Number(event.target.value) })} step="0.1" type="number" value={selectedStair.width} /></label>
-              <label>Fondo <input className="small-input" onChange={(event) => updateSelectedStair({ depth: Number(event.target.value) })} step="0.1" type="number" value={selectedStair.depth} /></label>
-              <label>Cota origen <input className="small-input" onChange={(event) => updateSelectedStair({ fromElevation: Number(event.target.value) })} step="0.05" type="number" value={selectedStair.fromElevation} /></label>
-              <label>Cota destino <input className="small-input" onChange={(event) => updateSelectedStair({ toElevation: Number(event.target.value) })} step="0.05" type="number" value={selectedStair.toElevation} /></label>
-              <label>Peldaños <input className="small-input" onChange={(event) => updateSelectedStair({ steps: Number(event.target.value) })} step="1" type="number" value={selectedStair.steps} /></label>
-              <label>Color <input onChange={(event) => updateSelectedStair({ color: event.target.value })} type="color" value={selectedStair.color} /></label>
-              <button className="danger" onClick={deleteSelected} type="button">Eliminar escalera</button>
-            </>
-          ) : null}
-
-          {!selected ? <p className="detail-text">Selecciona un muro libre, puerta, superficie o escalera. Los muros libres, superficies y escaleras se pueden arrastrar en planta.</p> : null}
-        </div>
       </aside>
 
       <main className="workspace">
@@ -998,6 +1039,66 @@ function App() {
             <span>{surfaces.length} superficies</span>
             <span>{stairs.length} escaleras</span>
           </div>
+        </div>
+        <div className={`properties-float ${propertiesOpen ? 'properties-float--open' : ''}`}>
+          <button className="properties-toggle" onClick={() => setPropertiesOpen((current) => !current)} type="button">
+            {propertiesOpen ? 'Ocultar propiedades' : 'Propiedades'}
+          </button>
+          {propertiesOpen ? (
+            <div className="properties-card">
+              <span className="section-label">Seleccion</span>
+              {selectedDoor ? (
+                <>
+                  <p className="detail-text">Puerta en {selectedDoor.wallId}</p>
+                  <label>Offset <input className="small-input" min="0.4" onChange={(event) => updateSelectedDoor({ offset: Number(event.target.value) })} step="0.1" type="number" value={selectedDoor.offset} /></label>
+                  <label>Ancho <input className="small-input" min="0.6" onChange={(event) => updateSelectedDoor({ width: Number(event.target.value) })} step="0.1" type="number" value={selectedDoor.width} /></label>
+                  <label>Color <input onChange={(event) => updateSelectedDoor({ color: event.target.value })} type="color" value={selectedDoor.color} /></label>
+                  <button className="danger" onClick={deleteSelected} type="button">Eliminar puerta</button>
+                </>
+              ) : null}
+              {selectedWall ? (
+                <>
+                  <p className="detail-text">Muro libre</p>
+                  <label>Inicio X <input className="small-input" onChange={(event) => updateSelectedWall({ start: { ...selectedWall.start, x: Number(event.target.value) } })} step="0.1" type="number" value={selectedWall.start.x} /></label>
+                  <label>Inicio Y <input className="small-input" onChange={(event) => updateSelectedWall({ start: { ...selectedWall.start, y: Number(event.target.value) } })} step="0.1" type="number" value={selectedWall.start.y} /></label>
+                  <label>Fin X <input className="small-input" onChange={(event) => updateSelectedWall({ end: { ...selectedWall.end, x: Number(event.target.value) } })} step="0.1" type="number" value={selectedWall.end.x} /></label>
+                  <label>Fin Y <input className="small-input" onChange={(event) => updateSelectedWall({ end: { ...selectedWall.end, y: Number(event.target.value) } })} step="0.1" type="number" value={selectedWall.end.y} /></label>
+                  <label>Color <input onChange={(event) => updateSelectedWall({ color: event.target.value })} type="color" value={selectedWall.color} /></label>
+                  <button className="danger" onClick={deleteSelected} type="button">Eliminar muro</button>
+                </>
+              ) : null}
+              {selectedSurface ? (
+                <>
+                  <p className="detail-text">{selectedSurface.label}</p>
+                  <label>Nombre <input onChange={(event) => updateSelectedSurface({ label: event.target.value })} type="text" value={selectedSurface.label} /></label>
+                  <label>X <input className="small-input" onChange={(event) => updateSelectedSurface({ x: Number(event.target.value) })} step="0.1" type="number" value={selectedSurface.x} /></label>
+                  <label>Y <input className="small-input" onChange={(event) => updateSelectedSurface({ y: Number(event.target.value) })} step="0.1" type="number" value={selectedSurface.y} /></label>
+                  <label>Ancho <input className="small-input" onChange={(event) => updateSelectedSurface({ width: Number(event.target.value) })} step="0.1" type="number" value={selectedSurface.width} /></label>
+                  <label>Fondo <input className="small-input" onChange={(event) => updateSelectedSurface({ depth: Number(event.target.value) })} step="0.1" type="number" value={selectedSurface.depth} /></label>
+                  <label>Cota <input className="small-input" onChange={(event) => updateSelectedSurface({ elevation: Number(event.target.value) })} step="0.05" type="number" value={selectedSurface.elevation} /></label>
+                  <label>Espesor <input className="small-input" onChange={(event) => updateSelectedSurface({ thickness: Number(event.target.value) })} step="0.05" type="number" value={selectedSurface.thickness} /></label>
+                  <label>Color <input onChange={(event) => updateSelectedSurface({ color: event.target.value })} type="color" value={selectedSurface.color} /></label>
+                  <button className="danger" onClick={deleteSelected} type="button">Eliminar superficie</button>
+                </>
+              ) : null}
+              {selectedStair ? (
+                <>
+                  <p className="detail-text">{selectedStair.label}</p>
+                  <label>Nombre <input onChange={(event) => updateSelectedStair({ label: event.target.value })} type="text" value={selectedStair.label} /></label>
+                  <label>X <input className="small-input" onChange={(event) => updateSelectedStair({ x: Number(event.target.value) })} step="0.1" type="number" value={selectedStair.x} /></label>
+                  <label>Y <input className="small-input" onChange={(event) => updateSelectedStair({ y: Number(event.target.value) })} step="0.1" type="number" value={selectedStair.y} /></label>
+                  <label>Ancho <input className="small-input" onChange={(event) => updateSelectedStair({ width: Number(event.target.value) })} step="0.1" type="number" value={selectedStair.width} /></label>
+                  <label>Fondo <input className="small-input" onChange={(event) => updateSelectedStair({ depth: Number(event.target.value) })} step="0.1" type="number" value={selectedStair.depth} /></label>
+                  <label>Cota origen <input className="small-input" onChange={(event) => updateSelectedStair({ fromElevation: Number(event.target.value) })} step="0.05" type="number" value={selectedStair.fromElevation} /></label>
+                  <label>Cota destino <input className="small-input" onChange={(event) => updateSelectedStair({ toElevation: Number(event.target.value) })} step="0.05" type="number" value={selectedStair.toElevation} /></label>
+                  <label>Peldaños <input className="small-input" onChange={(event) => updateSelectedStair({ steps: Number(event.target.value) })} step="1" type="number" value={selectedStair.steps} /></label>
+                  <label>Color <input onChange={(event) => updateSelectedStair({ color: event.target.value })} type="color" value={selectedStair.color} /></label>
+                  <button className="danger" onClick={deleteSelected} type="button">Eliminar escalera</button>
+                </>
+              ) : null}
+              {!selected ? <p className="detail-text">Selecciona un muro libre, puerta, superficie o escalera. Los muros libres, superficies y escaleras se pueden arrastrar en planta.</p> : null}
+            </div>
+          ) : null}
         </div>
 
         {viewMode === '2d' ? (
@@ -1025,6 +1126,7 @@ function App() {
                       event.stopPropagation()
                       const bounds = event.currentTarget.ownerSVGElement!.getBoundingClientRect()
                       const pointer = pointToViewBox(event as unknown as ReactPointerEvent<SVGSVGElement>, viewBox, bounds)
+                      beginGestureHistory()
                       setSelected({ type: 'surface', id: surface.id })
                       setInteraction({ type: 'surface-move', id: surface.id, originPointer: pointer.meters, originX: surface.x, originY: surface.y })
                     }}
@@ -1055,6 +1157,7 @@ function App() {
                         event.stopPropagation()
                         const bounds = event.currentTarget.ownerSVGElement!.getBoundingClientRect()
                         const pointer = pointToViewBox(event as unknown as ReactPointerEvent<SVGSVGElement>, viewBox, bounds)
+                        beginGestureHistory()
                         setSelected({ type: 'stairs', id: stair.id })
                         setInteraction({ type: 'stairs-move', id: stair.id, originPointer: pointer.meters, originX: stair.x, originY: stair.y })
                       }}
@@ -1101,6 +1204,7 @@ function App() {
                         const pointer = pointToViewBox(event as unknown as ReactPointerEvent<SVGSVGElement>, viewBox, bounds)
                         const rawWall = freeWalls.find((item) => item.id === wall.id.replace('free-', ''))
                         if (!rawWall) return
+                        beginGestureHistory()
                         setSelected({ type: 'wall', id: rawWall.id })
                         setInteraction({ type: 'free-wall-move', wallId: rawWall.id, originPointer: pointer.meters, originStart: rawWall.start, originEnd: rawWall.end })
                       }}
@@ -1137,7 +1241,7 @@ function App() {
                 const canvasPoint = toCanvas(point)
                 return (
                   <g key={point.id}>
-                    <circle className="point-handle" cx={canvasPoint.x} cy={canvasPoint.y} onPointerDown={(event) => { event.stopPropagation(); setInteraction({ type: 'room-point', pointId: point.id }); setTool('select') }} r={pointRadius} />
+                    <circle className="point-handle" cx={canvasPoint.x} cy={canvasPoint.y} onPointerDown={(event) => { event.stopPropagation(); beginGestureHistory(); setInteraction({ type: 'room-point', pointId: point.id }); setTool('select') }} r={pointRadius} />
                     <text className="point-label" x={canvasPoint.x + 12} y={canvasPoint.y - 12}>{point.x.toFixed(1)}, {point.y.toFixed(1)}</text>
                   </g>
                 )
@@ -1148,8 +1252,8 @@ function App() {
                 const end = toCanvas(wall.end)
                 return (
                   <g key={`handles-${wall.id}`}>
-                    <circle className="endpoint-handle" cx={start.x} cy={start.y} onPointerDown={(event) => { if (tool !== 'select') return; event.stopPropagation(); setSelected({ type: 'wall', id: wall.id }); setInteraction({ type: 'free-wall-start', wallId: wall.id }) }} r="7" />
-                    <circle className="endpoint-handle" cx={end.x} cy={end.y} onPointerDown={(event) => { if (tool !== 'select') return; event.stopPropagation(); setSelected({ type: 'wall', id: wall.id }); setInteraction({ type: 'free-wall-end', wallId: wall.id }) }} r="7" />
+                    <circle className="endpoint-handle" cx={start.x} cy={start.y} onPointerDown={(event) => { if (tool !== 'select') return; event.stopPropagation(); beginGestureHistory(); setSelected({ type: 'wall', id: wall.id }); setInteraction({ type: 'free-wall-start', wallId: wall.id }) }} r="7" />
+                    <circle className="endpoint-handle" cx={end.x} cy={end.y} onPointerDown={(event) => { if (tool !== 'select') return; event.stopPropagation(); beginGestureHistory(); setSelected({ type: 'wall', id: wall.id }); setInteraction({ type: 'free-wall-end', wallId: wall.id }) }} r="7" />
                   </g>
                 )
               })}

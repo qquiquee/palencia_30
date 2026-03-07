@@ -107,8 +107,6 @@ const pixelsPerMeter = 120
 const pointRadius = 8
 const minViewWidth = 240
 const maxViewWidth = 3200
-const storageKey = 'palencia-30-design'
-
 const defaultSceneStyle: SceneStyle = {
   roomWallColor: '#f7f2ea',
   floorColor: '#dcc4a5',
@@ -619,19 +617,35 @@ function App() {
     lastSnapshotRef.current = serializeForHistory(next)
   }
 
-  const saveDesign = () => {
-    localStorage.setItem(storageKey, JSON.stringify(persistableDesign))
-    setSaveMessage('Diseño guardado en este navegador.')
-  }
+  const saveDesign = async () => {
+    const response = await fetch('/api/design/default', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(persistableDesign),
+    })
 
-  const loadSavedDesign = () => {
-    const raw = localStorage.getItem(storageKey)
-    if (!raw) {
-      setSaveMessage('No hay diseño guardado todavía.')
+    if (!response.ok) {
+      setSaveMessage('No se pudo guardar en SQLite.')
       return
     }
 
-    const saved = JSON.parse(raw) as PersistedDesign
+    setSaveMessage('Diseño guardado en SQLite.')
+  }
+
+  const loadSavedDesign = async () => {
+    const response = await fetch('/api/design/default')
+    if (!response.ok) {
+      setSaveMessage('No se pudo cargar el diseño guardado.')
+      return
+    }
+
+    const payload = (await response.json()) as { design: PersistedDesign | null }
+    if (!payload.design) {
+      setSaveMessage('SQLite no tiene un diseño guardado todavía.')
+      return
+    }
+
+    const saved = payload.design
     skipHistoryRef.current = true
     applyDesign(saved)
     setSelected(null)
@@ -640,7 +654,7 @@ function App() {
     setFuture([])
     lastDesignRef.current = cloneDesign(saved)
     lastSnapshotRef.current = serializeForHistory(saved)
-    setSaveMessage('Diseño cargado desde guardado local.')
+    setSaveMessage('Diseño cargado desde SQLite.')
   }
 
   const downloadDesign = () => {

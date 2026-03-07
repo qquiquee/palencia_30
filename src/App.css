@@ -70,6 +70,50 @@ label {
   flex: 1 1 120px;
 }
 
+.project-list {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.project-card {
+  align-items: stretch;
+  display: flex;
+  flex: 0 0 132px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.project-card--active {
+  background: #3f6a52;
+  color: #f8f1e5;
+}
+
+.project-preview {
+  background: #f3eadc;
+  border-radius: 12px;
+  height: 92px;
+  object-fit: cover;
+  width: 100%;
+}
+
+.project-preview--empty {
+  align-items: center;
+  color: #7d6248;
+  display: flex;
+  font-size: 0.82rem;
+  justify-content: center;
+}
+
+.project-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-align: left;
+}
+
 button {
   background: #efe3d1;
   border: 1px solid transparent;

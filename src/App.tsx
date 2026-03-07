@@ -1,6 +1,6 @@
 ﻿
 import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState, type WheelEvent } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
 import { GizmoHelper, GizmoViewport, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import './App.css'
@@ -97,14 +97,25 @@ type PersistedDesign = {
   isRoomClosed: boolean
   wallHeight: number
   wallThickness: number
-  viewBox: ViewBox
   sceneStyle: SceneStyle
 }
 
 type ProjectSummary = {
   id: string
   name: string
+  preview: string | null
   updated_at: string
+}
+
+type OrbitState = {
+  position: [number, number, number]
+  target: [number, number, number]
+}
+
+type ProjectSettings = {
+  planViewBox: ViewBox
+  preferredViewMode: ViewMode
+  orbit: OrbitState
 }
 
 const svgWidth = 960
@@ -117,6 +128,15 @@ const defaultSceneStyle: SceneStyle = {
   roomWallColor: '#f7f2ea',
   floorColor: '#dcc4a5',
   roomFillColor: '#e3c698',
+}
+
+const defaultProjectSettings: ProjectSettings = {
+  planViewBox: { x: 0, y: 0, width: svgWidth, height: svgHeight },
+  preferredViewMode: '2d',
+  orbit: {
+    position: [7, 7, 8],
+    target: [2.5, 0, 2.5],
+  },
 }
 
 const sampleRoomPoints: Point[] = [
@@ -265,7 +285,6 @@ function createDefaultDesign(): PersistedDesign {
     isRoomClosed: true,
     wallHeight: 3.3,
     wallThickness: 0.18,
-    viewBox: { x: 0, y: 0, width: svgWidth, height: svgHeight },
     sceneStyle: defaultSceneStyle,
   }
 }
@@ -275,10 +294,7 @@ function cloneDesign(design: PersistedDesign): PersistedDesign {
 }
 
 function serializeForHistory(design: PersistedDesign) {
-  return JSON.stringify({
-    ...design,
-    viewBox: { x: 0, y: 0, width: svgWidth, height: svgHeight },
-  })
+  return JSON.stringify(design)
 }
 
 function clampDoorToWall(door: Door, wall: WallDescriptor) {
@@ -287,6 +303,59 @@ function clampDoorToWall(door: Door, wall: WallDescriptor) {
   const half = width / 2
   const offset = clamp(roundToGrid(door.offset), half + 0.1, wall.length - half - 0.1)
   return { ...door, width, offset }
+}
+
+function OrbitSync({
+  orbit,
+}: {
+  orbit: OrbitState
+}) {
+  const { camera, controls } = useThree()
+
+  useEffect(() => {
+    camera.position.set(...orbit.position)
+    if (controls && 'target' in controls) {
+      ;(controls as OrbitControlsImplLike).target.set(...orbit.target)
+      ;(controls as OrbitControlsImplLike).update()
+    }
+  }, [camera, controls, orbit])
+
+  return null
+}
+
+type OrbitControlsImplLike = {
+  target: { x: number; y: number; z: number; set: (x: number, y: number, z: number) => void }
+  update: () => void
+}
+
+function buildProjectPreview(design: PersistedDesign) {
+  const lines = [
+    ...getRoomWalls(design.roomPoints, design.isRoomClosed, design.sceneStyle.roomWallColor),
+    ...getFreeWalls(design.freeWalls),
+  ]
+
+  const svgLines = lines
+    .map((wall) => {
+      const start = toCanvas(wall.start)
+      const end = toCanvas(wall.end)
+      return `<line x1="${start.x / 6}" y1="${start.y / 6}" x2="${end.x / 6}" y2="${end.y / 6}" stroke="${wall.color}" stroke-width="3" stroke-linecap="round" />`
+    })
+    .join('')
+
+  const surfaceRects = design.surfaces
+    .map(
+      (surface) =>
+        `<rect x="${metersToSvg(surface.x) / 6}" y="${metersToSvg(surface.y) / 6}" width="${metersToSvg(surface.width) / 6}" height="${metersToSvg(surface.depth) / 6}" fill="${surface.color}" fill-opacity="0.35" stroke="${surface.color}" stroke-width="1.5" />`,
+    )
+    .join('')
+
+  const roomPolygon =
+    design.isRoomClosed && design.roomPoints.length > 2
+      ? `<polygon points="${design.roomPoints.map((point) => `${metersToSvg(point.x) / 6},${metersToSvg(point.y) / 6}`).join(' ')}" fill="${design.sceneStyle.roomFillColor}" fill-opacity="0.15" stroke="${design.sceneStyle.roomFillColor}" stroke-opacity="0.45" stroke-width="1" />`
+      : ''
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 136"><rect width="192" height="136" rx="14" fill="#f7f1e8" />${roomPolygon}${surfaceRects}${svgLines}</svg>`
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 
 function Scene3D({
@@ -299,7 +368,12 @@ function Scene3D({
   wallThickness,
   wallHeight,
   sceneStyle,
-}: PersistedDesign) {
+  orbit,
+  onOrbitChange,
+}: PersistedDesign & {
+  orbit: OrbitState
+  onOrbitChange: (orbit: OrbitState) => void
+}) {
   const roomShape = useMemo(() => {
     if (!isRoomClosed || roomPoints.length < 3) {
       return null
@@ -315,8 +389,9 @@ function Scene3D({
   const walls = useMemo(() => [...getRoomWalls(roomPoints, isRoomClosed, sceneStyle.roomWallColor), ...getFreeWalls(freeWalls)], [freeWalls, isRoomClosed, roomPoints, sceneStyle.roomWallColor])
 
   return (
-    <Canvas camera={{ position: [7, 7, 8], fov: 42 }}>
+    <Canvas camera={{ position: orbit.position, fov: 42 }}>
       <color attach="background" args={['#efe6d6']} />
+      <OrbitSync orbit={orbit} />
       <ambientLight intensity={1.45} />
       <directionalLight castShadow intensity={1.2} position={[10, 12, 5]} />
       <gridHelper args={[20, 40, '#ad9e8b', '#d7ccbb']} position={[3.5, 0, 3.5]} />
@@ -385,7 +460,20 @@ function Scene3D({
         })
       })}
 
-      <OrbitControls makeDefault maxDistance={22} minDistance={3} />
+      <OrbitControls
+        makeDefault
+        maxDistance={22}
+        minDistance={3}
+        onEnd={(event) => {
+          const control = event.target as OrbitControlsImplLike & {
+            object: { position: { x: number; y: number; z: number } }
+          }
+          onOrbitChange({
+            position: [control.object.position.x, control.object.position.y, control.object.position.z],
+            target: [(control.target as { x: number }).x, (control.target as { y: number }).y, (control.target as { z: number }).z],
+          })
+        }}
+      />
       <GizmoHelper alignment="bottom-right" margin={[84, 84]}>
         <GizmoViewport axisColors={['#d06a35', '#3f6a52', '#7a4034']} labelColor="#f8f1e5" />
       </GizmoHelper>
@@ -395,6 +483,7 @@ function Scene3D({
 
 function App() {
   const initial = createDefaultDesign()
+  const initialSettings = defaultProjectSettings
   const [roomPoints, setRoomPoints] = useState<Point[]>(initial.roomPoints)
   const [freeWalls, setFreeWalls] = useState<WallSegment[]>(initial.freeWalls)
   const [doors, setDoors] = useState<Door[]>(initial.doors)
@@ -402,11 +491,12 @@ function App() {
   const [stairs, setStairs] = useState<Stair[]>(initial.stairs)
   const [isRoomClosed, setIsRoomClosed] = useState(initial.isRoomClosed)
   const [tool, setTool] = useState<Tool>('select')
-  const [viewMode, setViewMode] = useState<ViewMode>('2d')
+  const [viewMode, setViewMode] = useState<ViewMode>(initialSettings.preferredViewMode)
   const [selected, setSelected] = useState<SelectedEntity>({ type: 'door', id: initial.doors[0].id })
   const [wallHeight, setWallHeight] = useState(initial.wallHeight)
   const [wallThickness, setWallThickness] = useState(initial.wallThickness)
-  const [viewBox, setViewBox] = useState<ViewBox>(initial.viewBox)
+  const [viewBox, setViewBox] = useState<ViewBox>(initialSettings.planViewBox)
+  const [orbit, setOrbit] = useState<OrbitState>(initialSettings.orbit)
   const [sceneStyle, setSceneStyle] = useState<SceneStyle>(initial.sceneStyle)
   const [draftWallStart, setDraftWallStart] = useState<Point | null>(null)
   const [dragDraft, setDragDraft] = useState<DragDraft | null>(null)
@@ -495,6 +585,7 @@ function App() {
       if (active) {
         setActiveProjectId(active.id)
         setActiveProjectName(active.name)
+        void openProject(active.id)
       }
     }
 
@@ -536,10 +627,14 @@ function App() {
     isRoomClosed,
     wallHeight,
     wallThickness,
-    viewBox,
     sceneStyle,
   }
   currentDesignRef.current = persistableDesign
+  const projectSettings: ProjectSettings = {
+    planViewBox: viewBox,
+    preferredViewMode: viewMode,
+    orbit,
+  }
 
   const applyDesign = (design: PersistedDesign) => {
     setRoomPoints(design.roomPoints ?? [])
@@ -550,8 +645,13 @@ function App() {
     setIsRoomClosed(design.isRoomClosed ?? false)
     setWallHeight(design.wallHeight ?? 3.3)
     setWallThickness(design.wallThickness ?? 0.18)
-    setViewBox(design.viewBox ?? { x: 0, y: 0, width: svgWidth, height: svgHeight })
     setSceneStyle(design.sceneStyle ?? defaultSceneStyle)
+  }
+
+  const applyProjectSettings = (settings?: ProjectSettings | null) => {
+    setViewBox(settings?.planViewBox ?? defaultProjectSettings.planViewBox)
+    setViewMode(settings?.preferredViewMode ?? defaultProjectSettings.preferredViewMode)
+    setOrbit(settings?.orbit ?? defaultProjectSettings.orbit)
   }
 
   const beginGestureHistory = () => {
@@ -649,7 +749,11 @@ function App() {
     const response = await fetch(`/api/projects/${activeProjectId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ design: persistableDesign }),
+      body: JSON.stringify({
+        design: persistableDesign,
+        settings: projectSettings,
+        preview: buildProjectPreview(persistableDesign),
+      }),
     })
 
     if (!response.ok) {
@@ -659,7 +763,13 @@ function App() {
 
     setProjects((current) =>
       current.map((project) =>
-        project.id === activeProjectId ? { ...project, updated_at: new Date().toISOString() } : project,
+        project.id === activeProjectId
+          ? {
+              ...project,
+              updated_at: new Date().toISOString(),
+              preview: buildProjectPreview(persistableDesign),
+            }
+          : project,
       ),
     )
     setSaveMessage(`Proyecto "${activeProjectName}" guardado en SQLite.`)
@@ -672,7 +782,7 @@ function App() {
       return
     }
 
-    const payload = (await response.json()) as { project: { id: string; name: string; payload: PersistedDesign | null } }
+    const payload = (await response.json()) as { project: { id: string; name: string; payload: PersistedDesign | null; settings: ProjectSettings | null } }
     if (!payload.project.payload) {
       setSaveMessage('SQLite no tiene un diseño guardado todavía.')
       return
@@ -681,6 +791,7 @@ function App() {
     const saved = payload.project.payload
     skipHistoryRef.current = true
     applyDesign(saved)
+    applyProjectSettings(payload.project.settings)
     setSelected(null)
     setTool('select')
     setHistory([])
@@ -720,9 +831,9 @@ function App() {
     }
 
     const payload = (await response.json()) as {
-      project: { id: string; name: string }
+      project: { id: string; name: string; preview?: string | null }
     }
-    setProjects((current) => [{ id: payload.project.id, name: payload.project.name, updated_at: new Date().toISOString() }, ...current])
+    setProjects((current) => [{ id: payload.project.id, name: payload.project.name, preview: payload.project.preview ?? null, updated_at: new Date().toISOString() }, ...current])
     setActiveProjectId(payload.project.id)
     setActiveProjectName(payload.project.name)
     const clean = createDefaultDesign()
@@ -744,6 +855,7 @@ function App() {
     lastDesignRef.current = cloneDesign(emptyDesign)
     currentDesignRef.current = cloneDesign(emptyDesign)
     lastSnapshotRef.current = serializeForHistory(emptyDesign)
+    applyProjectSettings(defaultProjectSettings)
     setSaveMessage(`Proyecto "${payload.project.name}" creado.`)
   }
 
@@ -765,7 +877,7 @@ function App() {
     }
 
     const payload = (await response.json()) as {
-      project: { id: string; name: string; updated_at: string }
+      project: { id: string; name: string; updated_at: string; preview?: string | null }
     }
     setProjects((current) => current.map((project) => (project.id === payload.project.id ? payload.project : project)))
     setActiveProjectName(payload.project.name)
@@ -780,7 +892,7 @@ function App() {
     }
 
     const payload = (await response.json()) as {
-      project: { id: string; name: string; payload: PersistedDesign | null }
+      project: { id: string; name: string; payload: PersistedDesign | null; settings: ProjectSettings | null }
     }
 
     setActiveProjectId(payload.project.id)
@@ -793,6 +905,7 @@ function App() {
     if (payload.project.payload) {
       skipHistoryRef.current = true
       applyDesign(payload.project.payload)
+      applyProjectSettings(payload.project.settings)
       lastDesignRef.current = cloneDesign(payload.project.payload)
       currentDesignRef.current = cloneDesign(payload.project.payload)
       lastSnapshotRef.current = serializeForHistory(payload.project.payload)
@@ -810,11 +923,38 @@ function App() {
       }
       skipHistoryRef.current = true
       applyDesign(emptyDesign)
+      applyProjectSettings(payload.project.settings ?? defaultProjectSettings)
       setTool('draw-room')
       lastDesignRef.current = cloneDesign(emptyDesign)
       currentDesignRef.current = cloneDesign(emptyDesign)
       lastSnapshotRef.current = serializeForHistory(emptyDesign)
       setSaveMessage(`Proyecto "${payload.project.name}" abierto sin diseño aún.`)
+    }
+  }
+
+  const deleteActiveProject = async () => {
+    if (activeProjectId === 'default') {
+      setSaveMessage('El proyecto principal no se puede borrar.')
+      return
+    }
+
+    const confirmed = window.confirm(`Borrar el proyecto "${activeProjectName}"?`)
+    if (!confirmed) {
+      return
+    }
+
+    const response = await fetch(`/api/projects/${activeProjectId}`, { method: 'DELETE' })
+    if (!response.ok) {
+      setSaveMessage('No se pudo borrar el proyecto.')
+      return
+    }
+
+    const remaining = projects.filter((project) => project.id !== activeProjectId)
+    setProjects(remaining)
+    if (remaining[0]) {
+      void openProject(remaining[0].id)
+    } else {
+      void openProject('default')
     }
   }
 
@@ -859,7 +999,7 @@ function App() {
     setSelected(null)
     setDraftWallStart(null)
     setTool('draw-room')
-    setViewBox(clean.viewBox)
+    applyProjectSettings(defaultProjectSettings)
     setSceneStyle(clean.sceneStyle)
     setHistory([])
     setFuture([])
@@ -880,7 +1020,7 @@ function App() {
     setSelected({ type: 'door', id: sample.doors[0].id })
     setDraftWallStart(null)
     setTool('select')
-    setViewBox(sample.viewBox)
+    applyProjectSettings(defaultProjectSettings)
     setSceneStyle(sample.sceneStyle)
     setHistory([])
     setFuture([])
@@ -1131,8 +1271,22 @@ function App() {
           <div className="button-stack">
             <button onClick={() => void createProject()} type="button">Nuevo proyecto</button>
             <button onClick={() => void renameProject()} type="button">Renombrar</button>
+            <button className="danger" disabled={activeProjectId === 'default'} onClick={() => void deleteActiveProject()} type="button">Borrar proyecto</button>
           </div>
           <p className="detail-text">{activeProjectName}</p>
+          <div className="project-list">
+            {projects.map((project) => (
+              <button
+                className={`project-card ${project.id === activeProjectId ? 'project-card--active' : ''}`}
+                key={project.id}
+                onClick={() => void openProject(project.id)}
+                type="button"
+              >
+                {project.preview ? <img alt={project.name} className="project-preview" src={project.preview} /> : <div className="project-preview project-preview--empty">Sin preview</div>}
+                <span className="project-name">{project.name}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="panel">
@@ -1449,7 +1603,7 @@ function App() {
           </div>
         ) : (
           <div className="canvas-card canvas-card--three">
-            <Scene3D {...persistableDesign} />
+            <Scene3D {...persistableDesign} onOrbitChange={setOrbit} orbit={orbit} />
           </div>
         )}
       </main>

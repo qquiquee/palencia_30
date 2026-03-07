@@ -101,6 +101,12 @@ type PersistedDesign = {
   sceneStyle: SceneStyle
 }
 
+type ProjectSummary = {
+  id: string
+  name: string
+  updated_at: string
+}
+
 const svgWidth = 960
 const svgHeight = 680
 const pixelsPerMeter = 120
@@ -406,6 +412,9 @@ function App() {
   const [dragDraft, setDragDraft] = useState<DragDraft | null>(null)
   const [interaction, setInteraction] = useState<Interaction>(null)
   const [saveMessage, setSaveMessage] = useState('')
+  const [projects, setProjects] = useState<ProjectSummary[]>([])
+  const [activeProjectId, setActiveProjectId] = useState('default')
+  const [activeProjectName, setActiveProjectName] = useState('Proyecto principal')
   const [history, setHistory] = useState<PersistedDesign[]>([])
   const [future, setFuture] = useState<PersistedDesign[]>([])
   const [propertiesOpen, setPropertiesOpen] = useState(true)
@@ -472,6 +481,25 @@ function App() {
       setSelected(null)
     }
   }, [doors, freeWalls, selected, stairs, surfaces])
+
+  useEffect(() => {
+    const loadProjects = async () => {
+      const response = await fetch('/api/projects')
+      if (!response.ok) {
+        return
+      }
+
+      const payload = (await response.json()) as { projects: ProjectSummary[] }
+      setProjects(payload.projects)
+      const active = payload.projects.find((project) => project.id === activeProjectId) ?? payload.projects[0]
+      if (active) {
+        setActiveProjectId(active.id)
+        setActiveProjectName(active.name)
+      }
+    }
+
+    void loadProjects()
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -618,10 +646,10 @@ function App() {
   }
 
   const saveDesign = async () => {
-    const response = await fetch('/api/design/default', {
+    const response = await fetch(`/api/projects/${activeProjectId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(persistableDesign),
+      body: JSON.stringify({ design: persistableDesign }),
     })
 
     if (!response.ok) {
@@ -629,23 +657,28 @@ function App() {
       return
     }
 
-    setSaveMessage('Diseño guardado en SQLite.')
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === activeProjectId ? { ...project, updated_at: new Date().toISOString() } : project,
+      ),
+    )
+    setSaveMessage(`Proyecto "${activeProjectName}" guardado en SQLite.`)
   }
 
   const loadSavedDesign = async () => {
-    const response = await fetch('/api/design/default')
+    const response = await fetch(`/api/projects/${activeProjectId}`)
     if (!response.ok) {
       setSaveMessage('No se pudo cargar el diseño guardado.')
       return
     }
 
-    const payload = (await response.json()) as { design: PersistedDesign | null }
-    if (!payload.design) {
+    const payload = (await response.json()) as { project: { id: string; name: string; payload: PersistedDesign | null } }
+    if (!payload.project.payload) {
       setSaveMessage('SQLite no tiene un diseño guardado todavía.')
       return
     }
 
-    const saved = payload.design
+    const saved = payload.project.payload
     skipHistoryRef.current = true
     applyDesign(saved)
     setSelected(null)
@@ -654,7 +687,8 @@ function App() {
     setFuture([])
     lastDesignRef.current = cloneDesign(saved)
     lastSnapshotRef.current = serializeForHistory(saved)
-    setSaveMessage('Diseño cargado desde SQLite.')
+    setActiveProjectName(payload.project.name)
+    setSaveMessage(`Proyecto "${payload.project.name}" cargado desde SQLite.`)
   }
 
   const downloadDesign = () => {
@@ -666,6 +700,122 @@ function App() {
     link.click()
     URL.revokeObjectURL(url)
     setSaveMessage('JSON descargado.')
+  }
+
+  const createProject = async () => {
+    const name = window.prompt('Nombre del nuevo proyecto', `Proyecto ${projects.length + 1}`)
+    if (!name) {
+      return
+    }
+
+    const response = await fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+
+    if (!response.ok) {
+      setSaveMessage('No se pudo crear el proyecto.')
+      return
+    }
+
+    const payload = (await response.json()) as {
+      project: { id: string; name: string }
+    }
+    setProjects((current) => [{ id: payload.project.id, name: payload.project.name, updated_at: new Date().toISOString() }, ...current])
+    setActiveProjectId(payload.project.id)
+    setActiveProjectName(payload.project.name)
+    const clean = createDefaultDesign()
+    const emptyDesign = {
+      ...clean,
+      roomPoints: [],
+      freeWalls: [],
+      doors: [],
+      surfaces: [],
+      stairs: [],
+      isRoomClosed: false,
+    }
+    skipHistoryRef.current = true
+    applyDesign(emptyDesign)
+    setSelected(null)
+    setTool('draw-room')
+    setHistory([])
+    setFuture([])
+    lastDesignRef.current = cloneDesign(emptyDesign)
+    currentDesignRef.current = cloneDesign(emptyDesign)
+    lastSnapshotRef.current = serializeForHistory(emptyDesign)
+    setSaveMessage(`Proyecto "${payload.project.name}" creado.`)
+  }
+
+  const renameProject = async () => {
+    const name = window.prompt('Nuevo nombre del proyecto', activeProjectName)
+    if (!name) {
+      return
+    }
+
+    const response = await fetch(`/api/projects/${activeProjectId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+
+    if (!response.ok) {
+      setSaveMessage('No se pudo renombrar el proyecto.')
+      return
+    }
+
+    const payload = (await response.json()) as {
+      project: { id: string; name: string; updated_at: string }
+    }
+    setProjects((current) => current.map((project) => (project.id === payload.project.id ? payload.project : project)))
+    setActiveProjectName(payload.project.name)
+    setSaveMessage(`Proyecto renombrado a "${payload.project.name}".`)
+  }
+
+  const openProject = async (projectId: string) => {
+    const response = await fetch(`/api/projects/${projectId}`)
+    if (!response.ok) {
+      setSaveMessage('No se pudo abrir el proyecto.')
+      return
+    }
+
+    const payload = (await response.json()) as {
+      project: { id: string; name: string; payload: PersistedDesign | null }
+    }
+
+    setActiveProjectId(payload.project.id)
+    setActiveProjectName(payload.project.name)
+    setSelected(null)
+    setTool('select')
+    setHistory([])
+    setFuture([])
+
+    if (payload.project.payload) {
+      skipHistoryRef.current = true
+      applyDesign(payload.project.payload)
+      lastDesignRef.current = cloneDesign(payload.project.payload)
+      currentDesignRef.current = cloneDesign(payload.project.payload)
+      lastSnapshotRef.current = serializeForHistory(payload.project.payload)
+      setSaveMessage(`Proyecto "${payload.project.name}" abierto.`)
+    } else {
+      const clean = createDefaultDesign()
+      const emptyDesign = {
+        ...clean,
+        roomPoints: [],
+        freeWalls: [],
+        doors: [],
+        surfaces: [],
+        stairs: [],
+        isRoomClosed: false,
+      }
+      skipHistoryRef.current = true
+      applyDesign(emptyDesign)
+      setTool('draw-room')
+      lastDesignRef.current = cloneDesign(emptyDesign)
+      currentDesignRef.current = cloneDesign(emptyDesign)
+      lastSnapshotRef.current = serializeForHistory(emptyDesign)
+      setSaveMessage(`Proyecto "${payload.project.name}" abierto sin diseño aún.`)
+    }
   }
 
   const importDesignFile = (file: File) => {
@@ -691,6 +841,15 @@ function App() {
 
   const resetScene = () => {
     const clean = createDefaultDesign()
+    const emptyDesign = {
+      ...clean,
+      roomPoints: [],
+      freeWalls: [],
+      doors: [],
+      surfaces: [],
+      stairs: [],
+      isRoomClosed: false,
+    }
     setRoomPoints([])
     setFreeWalls([])
     setDoors([])
@@ -704,15 +863,8 @@ function App() {
     setSceneStyle(clean.sceneStyle)
     setHistory([])
     setFuture([])
-    lastDesignRef.current = cloneDesign({
-      ...clean,
-      roomPoints: [],
-      freeWalls: [],
-      doors: [],
-      surfaces: [],
-      stairs: [],
-      isRoomClosed: false,
-    })
+    lastDesignRef.current = cloneDesign(emptyDesign)
+    currentDesignRef.current = cloneDesign(emptyDesign)
     lastSnapshotRef.current = serializeForHistory(lastDesignRef.current)
     setSaveMessage('Lienzo reiniciado.')
   }
@@ -962,6 +1114,25 @@ function App() {
           <p className="eyebrow">Palencia 30</p>
           <h1>Editor arquitectonico 2D/3D</h1>
           <p className="lede">Guarda el diseño, edita elementos existentes y ajusta colores de muros, suelos, superficies, escaleras y puertas.</p>
+        </div>
+
+        <div className="panel">
+          <span className="section-label">Proyecto</span>
+          <label>
+            Activo
+            <select onChange={(event) => void openProject(event.target.value)} value={activeProjectId}>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="button-stack">
+            <button onClick={() => void createProject()} type="button">Nuevo proyecto</button>
+            <button onClick={() => void renameProject()} type="button">Renombrar</button>
+          </div>
+          <p className="detail-text">{activeProjectName}</p>
         </div>
 
         <div className="panel">

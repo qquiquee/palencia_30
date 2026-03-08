@@ -138,6 +138,10 @@ button:hover {
   margin-bottom: 0;
 }
 
+.autosave-text {
+  margin-bottom: 6px;
+}
+
 .hidden-input {
   display: none;
 }

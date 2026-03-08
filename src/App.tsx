@@ -349,12 +349,34 @@ function buildProjectPreview(design: PersistedDesign) {
     )
     .join('')
 
+  const stairRects = design.stairs
+    .map(
+      (stair) =>
+        `<rect x="${metersToSvg(stair.x) / 6}" y="${metersToSvg(stair.y) / 6}" width="${metersToSvg(stair.width) / 6}" height="${metersToSvg(stair.depth) / 6}" fill="${stair.color}" fill-opacity="0.22" stroke="${stair.color}" stroke-width="1.5" />`,
+    )
+    .join('')
+
+  const doorLines = design.doors
+    .map((door) => {
+      const wall = lines.find((item) => item.id === door.wallId)
+      if (!wall) {
+        return ''
+      }
+
+      const startFactor = (door.offset - door.width / 2) / wall.length
+      const endFactor = (door.offset + door.width / 2) / wall.length
+      const start = toCanvas({ x: wall.start.x + wall.dx * startFactor, y: wall.start.y + wall.dy * startFactor })
+      const end = toCanvas({ x: wall.start.x + wall.dx * endFactor, y: wall.start.y + wall.dy * endFactor })
+      return `<line x1="${start.x / 6}" y1="${start.y / 6}" x2="${end.x / 6}" y2="${end.y / 6}" stroke="${door.color}" stroke-width="3" stroke-linecap="round" />`
+    })
+    .join('')
+
   const roomPolygon =
     design.isRoomClosed && design.roomPoints.length > 2
       ? `<polygon points="${design.roomPoints.map((point) => `${metersToSvg(point.x) / 6},${metersToSvg(point.y) / 6}`).join(' ')}" fill="${design.sceneStyle.roomFillColor}" fill-opacity="0.15" stroke="${design.sceneStyle.roomFillColor}" stroke-opacity="0.45" stroke-width="1" />`
       : ''
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 136"><rect width="192" height="136" rx="14" fill="#f7f1e8" />${roomPolygon}${surfaceRects}${svgLines}</svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 136"><rect width="192" height="136" rx="14" fill="#f7f1e8" />${roomPolygon}${surfaceRects}${stairRects}${svgLines}${doorLines}</svg>`
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 
@@ -502,6 +524,7 @@ function App() {
   const [dragDraft, setDragDraft] = useState<DragDraft | null>(null)
   const [interaction, setInteraction] = useState<Interaction>(null)
   const [saveMessage, setSaveMessage] = useState('')
+  const [autosaveState, setAutosaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [activeProjectId, setActiveProjectId] = useState('default')
   const [activeProjectName, setActiveProjectName] = useState('Proyecto principal')
@@ -514,6 +537,8 @@ function App() {
   const skipHistoryRef = useRef(false)
   const gestureSnapshotRef = useRef<PersistedDesign | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const autosaveTimeoutRef = useRef<Timer | null>(null)
+  const skipAutosaveRef = useRef(true)
 
   const roomWalls = useMemo(() => getRoomWalls(roomPoints, isRoomClosed, sceneStyle.roomWallColor), [isRoomClosed, roomPoints, sceneStyle.roomWallColor])
   const allWalls = useMemo(() => [...roomWalls, ...getFreeWalls(freeWalls)], [freeWalls, roomWalls])
@@ -713,6 +738,28 @@ function App() {
     lastDesignRef.current = cloneDesign(persistableDesign)
   }, [dragDraft, interaction, persistableDesign])
 
+  useEffect(() => {
+    if (skipAutosaveRef.current) {
+      skipAutosaveRef.current = false
+      return
+    }
+
+    if (autosaveTimeoutRef.current) {
+      clearTimeout(autosaveTimeoutRef.current)
+    }
+
+    setAutosaveState('saving')
+    autosaveTimeoutRef.current = setTimeout(() => {
+      void saveProjectToServer('auto')
+    }, 1200)
+
+    return () => {
+      if (autosaveTimeoutRef.current) {
+        clearTimeout(autosaveTimeoutRef.current)
+      }
+    }
+  }, [activeProjectId, persistableDesign, projectSettings])
+
   const undo = () => {
     if (history.length === 0) {
       return
@@ -745,7 +792,7 @@ function App() {
     lastSnapshotRef.current = serializeForHistory(next)
   }
 
-  const saveDesign = async () => {
+  const saveProjectToServer = async (mode: 'manual' | 'auto' = 'manual') => {
     const response = await fetch(`/api/projects/${activeProjectId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -757,7 +804,10 @@ function App() {
     })
 
     if (!response.ok) {
-      setSaveMessage('No se pudo guardar en SQLite.')
+      setAutosaveState('error')
+      if (mode === 'manual') {
+        setSaveMessage('No se pudo guardar en SQLite.')
+      }
       return
     }
 
@@ -772,7 +822,14 @@ function App() {
           : project,
       ),
     )
-    setSaveMessage(`Proyecto "${activeProjectName}" guardado en SQLite.`)
+    setAutosaveState('saved')
+    if (mode === 'manual') {
+      setSaveMessage(`Proyecto "${activeProjectName}" guardado en SQLite.`)
+    }
+  }
+
+  const saveDesign = async () => {
+    void saveProjectToServer('manual')
   }
 
   const loadSavedDesign = async () => {
@@ -790,6 +847,7 @@ function App() {
 
     const saved = payload.project.payload
     skipHistoryRef.current = true
+    skipAutosaveRef.current = true
     applyDesign(saved)
     applyProjectSettings(payload.project.settings)
     setSelected(null)
@@ -799,6 +857,7 @@ function App() {
     lastDesignRef.current = cloneDesign(saved)
     lastSnapshotRef.current = serializeForHistory(saved)
     setActiveProjectName(payload.project.name)
+    setAutosaveState('idle')
     setSaveMessage(`Proyecto "${payload.project.name}" cargado desde SQLite.`)
   }
 
@@ -836,6 +895,7 @@ function App() {
     setProjects((current) => [{ id: payload.project.id, name: payload.project.name, preview: payload.project.preview ?? null, updated_at: new Date().toISOString() }, ...current])
     setActiveProjectId(payload.project.id)
     setActiveProjectName(payload.project.name)
+    skipAutosaveRef.current = true
     const clean = createDefaultDesign()
     const emptyDesign = {
       ...clean,
@@ -856,7 +916,51 @@ function App() {
     currentDesignRef.current = cloneDesign(emptyDesign)
     lastSnapshotRef.current = serializeForHistory(emptyDesign)
     applyProjectSettings(defaultProjectSettings)
+    setAutosaveState('idle')
     setSaveMessage(`Proyecto "${payload.project.name}" creado.`)
+  }
+
+  const duplicateProject = async () => {
+    const name = window.prompt('Nombre de la copia', `${activeProjectName} copia`)
+    if (!name) {
+      return
+    }
+
+    const createResponse = await fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+
+    if (!createResponse.ok) {
+      setSaveMessage('No se pudo duplicar el proyecto.')
+      return
+    }
+
+    const created = (await createResponse.json()) as {
+      project: { id: string; name: string; preview?: string | null }
+    }
+
+    await fetch(`/api/projects/${created.project.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        design: persistableDesign,
+        settings: projectSettings,
+        preview: buildProjectPreview(persistableDesign),
+      }),
+    })
+
+    setProjects((current) => [
+      {
+        id: created.project.id,
+        name: created.project.name,
+        preview: buildProjectPreview(persistableDesign),
+        updated_at: new Date().toISOString(),
+      },
+      ...current,
+    ])
+    void openProject(created.project.id)
   }
 
   const renameProject = async () => {
@@ -881,6 +985,8 @@ function App() {
     }
     setProjects((current) => current.map((project) => (project.id === payload.project.id ? payload.project : project)))
     setActiveProjectName(payload.project.name)
+    skipAutosaveRef.current = true
+    setAutosaveState('idle')
     setSaveMessage(`Proyecto renombrado a "${payload.project.name}".`)
   }
 
@@ -901,6 +1007,7 @@ function App() {
     setTool('select')
     setHistory([])
     setFuture([])
+    skipAutosaveRef.current = true
 
     if (payload.project.payload) {
       skipHistoryRef.current = true
@@ -909,6 +1016,7 @@ function App() {
       lastDesignRef.current = cloneDesign(payload.project.payload)
       currentDesignRef.current = cloneDesign(payload.project.payload)
       lastSnapshotRef.current = serializeForHistory(payload.project.payload)
+      setAutosaveState('idle')
       setSaveMessage(`Proyecto "${payload.project.name}" abierto.`)
     } else {
       const clean = createDefaultDesign()
@@ -928,6 +1036,7 @@ function App() {
       lastDesignRef.current = cloneDesign(emptyDesign)
       currentDesignRef.current = cloneDesign(emptyDesign)
       lastSnapshotRef.current = serializeForHistory(emptyDesign)
+      setAutosaveState('idle')
       setSaveMessage(`Proyecto "${payload.project.name}" abierto sin diseño aún.`)
     }
   }
@@ -964,6 +1073,7 @@ function App() {
       try {
         const saved = JSON.parse(String(reader.result)) as PersistedDesign
         skipHistoryRef.current = true
+        skipAutosaveRef.current = true
         applyDesign(saved)
         setSelected(null)
         setTool('select')
@@ -971,6 +1081,7 @@ function App() {
         setFuture([])
         lastDesignRef.current = cloneDesign(saved)
         lastSnapshotRef.current = serializeForHistory(saved)
+        setAutosaveState('idle')
         setSaveMessage(`JSON importado: ${file.name}`)
       } catch {
         setSaveMessage('El archivo JSON no tiene un formato valido.')
@@ -999,6 +1110,7 @@ function App() {
     setSelected(null)
     setDraftWallStart(null)
     setTool('draw-room')
+    skipAutosaveRef.current = true
     applyProjectSettings(defaultProjectSettings)
     setSceneStyle(clean.sceneStyle)
     setHistory([])
@@ -1006,6 +1118,7 @@ function App() {
     lastDesignRef.current = cloneDesign(emptyDesign)
     currentDesignRef.current = cloneDesign(emptyDesign)
     lastSnapshotRef.current = serializeForHistory(lastDesignRef.current)
+    setAutosaveState('idle')
     setSaveMessage('Lienzo reiniciado.')
   }
 
@@ -1020,12 +1133,14 @@ function App() {
     setSelected({ type: 'door', id: sample.doors[0].id })
     setDraftWallStart(null)
     setTool('select')
+    skipAutosaveRef.current = true
     applyProjectSettings(defaultProjectSettings)
     setSceneStyle(sample.sceneStyle)
     setHistory([])
     setFuture([])
     lastDesignRef.current = cloneDesign(sample)
     lastSnapshotRef.current = serializeForHistory(sample)
+    setAutosaveState('idle')
     setSaveMessage('Ejemplo cargado.')
   }
 
@@ -1271,6 +1386,7 @@ function App() {
           <div className="button-stack">
             <button onClick={() => void createProject()} type="button">Nuevo proyecto</button>
             <button onClick={() => void renameProject()} type="button">Renombrar</button>
+            <button onClick={() => void duplicateProject()} type="button">Duplicar</button>
             <button className="danger" disabled={activeProjectId === 'default'} onClick={() => void deleteActiveProject()} type="button">Borrar proyecto</button>
           </div>
           <p className="detail-text">{activeProjectName}</p>
@@ -1335,6 +1451,7 @@ function App() {
             }
             event.currentTarget.value = ''
           }} ref={importInputRef} type="file" />
+          <p className="detail-text autosave-text">Autosave: {autosaveState}</p>
           {saveMessage ? <p className="detail-text save-message">{saveMessage}</p> : null}
         </div>
 

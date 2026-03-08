@@ -12,6 +12,16 @@ type ProjectRow = {
   updated_at: string
 }
 
+type SnapshotRow = {
+  id: string
+  project_id: string
+  name: string
+  payload: string
+  settings: string | null
+  preview: string | null
+  created_at: string
+}
+
 const dataDir = join(process.cwd(), 'data')
 mkdirSync(dataDir, { recursive: true })
 
@@ -27,12 +37,27 @@ db.exec(`
     updated_at TEXT NOT NULL
   )
 `)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS snapshots (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    settings TEXT,
+    preview TEXT,
+    created_at TEXT NOT NULL
+  )
+`)
 try {
   db.exec(`ALTER TABLE projects ADD COLUMN settings TEXT`)
-} catch {}
+} catch {
+  // Existing databases may already contain this column.
+}
 try {
   db.exec(`ALTER TABLE projects ADD COLUMN preview TEXT`)
-} catch {}
+} catch {
+  // Existing databases may already contain this column.
+}
 
 const listProjects = db.query<Pick<ProjectRow, 'id' | 'name' | 'updated_at' | 'preview'>, []>(
   'SELECT id, name, updated_at, preview FROM projects ORDER BY updated_at DESC',
@@ -50,6 +75,16 @@ const updateProjectName = db.query(
   'UPDATE projects SET name = ?, updated_at = ? WHERE id = ?',
 )
 const deleteProject = db.query('DELETE FROM projects WHERE id = ?')
+const listSnapshots = db.query<Pick<SnapshotRow, 'id' | 'name' | 'preview' | 'created_at'>, [string]>(
+  'SELECT id, name, preview, created_at FROM snapshots WHERE project_id = ? ORDER BY created_at DESC',
+)
+const getSnapshot = db.query<SnapshotRow, [string, string]>(
+  'SELECT id, project_id, name, payload, settings, preview, created_at FROM snapshots WHERE project_id = ? AND id = ?',
+)
+const insertSnapshot = db.query(
+  'INSERT INTO snapshots (id, project_id, name, payload, settings, preview, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+)
+const deleteSnapshotsForProject = db.query('DELETE FROM snapshots WHERE project_id = ?')
 
 function nowIso() {
   return new Date().toISOString()
@@ -71,27 +106,26 @@ ensureDefaultProject()
 const server = Bun.serve({
   port: Number(Bun.env.PORT ?? 3000),
   development: Bun.env.NODE_ENV !== 'production',
-  async fetch(req) {
-    const url = new URL(req.url)
-
-    if (url.pathname === '/api/projects' && req.method === 'GET') {
-      return json({ projects: listProjects.all() })
-    }
-
-    if (url.pathname === '/api/projects' && req.method === 'POST') {
-      try {
-        const body = (await req.json()) as { name?: string }
-        const id = `project-${crypto.randomUUID()}`
-        insertProject.run(id, body.name?.trim() || 'Proyecto sin nombre', null, null, null, nowIso())
-        const project = getProject.get(id)
-        return json({ project }, { status: 201 })
-      } catch {
-        return json({ error: 'invalid-payload' }, { status: 400 })
-      }
-    }
-
-    if (url.pathname.startsWith('/api/projects/')) {
-      const id = url.pathname.replace('/api/projects/', '')
+  routes: {
+    '/': index,
+    '/api/projects': {
+      GET() {
+        return json({ projects: listProjects.all() })
+      },
+      async POST(req) {
+        try {
+          const body = (await req.json()) as { name?: string }
+          const id = `project-${crypto.randomUUID()}`
+          insertProject.run(id, body.name?.trim() || 'Proyecto sin nombre', null, null, null, nowIso())
+          const project = getProject.get(id)
+          return json({ project }, { status: 201 })
+        } catch {
+          return json({ error: 'invalid-payload' }, { status: 400 })
+        }
+      },
+    },
+    '/api/projects/:id': async (req) => {
+      const { id } = req.params
       const project = getProject.get(id)
 
       if (!project) {
@@ -139,19 +173,75 @@ const server = Bun.serve({
         if (id === 'default') {
           return json({ error: 'cannot-delete-default' }, { status: 400 })
         }
+        deleteSnapshotsForProject.run(id)
         deleteProject.run(id)
         ensureDefaultProject()
         return json({ ok: true })
       }
-    }
 
-    if (url.pathname === '/favicon.ico') {
-      return new Response(null, { status: 204 })
-    }
+      return json({ error: 'method-not-allowed' }, { status: 405 })
+    },
+    '/api/projects/:projectId/snapshots': async (req) => {
+      const { projectId } = req.params
+      const project = getProject.get(projectId)
 
-    return new Response(index, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    })
+      if (!project) {
+        return json({ error: 'not-found' }, { status: 404 })
+      }
+
+      if (req.method === 'GET') {
+        return json({ snapshots: listSnapshots.all(projectId) })
+      }
+
+      if (req.method === 'POST') {
+        try {
+          const body = (await req.json()) as {
+            name?: string
+            design: unknown
+            settings?: unknown
+            preview?: string | null
+          }
+          const snapshotId = `snapshot-${crypto.randomUUID()}`
+          insertSnapshot.run(
+            snapshotId,
+            projectId,
+            body.name?.trim() || 'Snapshot',
+            JSON.stringify(body.design),
+            body.settings ? JSON.stringify(body.settings) : null,
+            body.preview ?? null,
+            nowIso(),
+          )
+          return json({ ok: true }, { status: 201 })
+        } catch {
+          return json({ error: 'invalid-payload' }, { status: 400 })
+        }
+      }
+
+      return json({ error: 'method-not-allowed' }, { status: 405 })
+    },
+    '/api/projects/:projectId/snapshots/:snapshotId': (req) => {
+      const { projectId, snapshotId } = req.params
+      const snapshot = getSnapshot.get(projectId, snapshotId)
+      if (!snapshot) {
+        return json({ error: 'not-found' }, { status: 404 })
+      }
+
+      if (req.method === 'GET') {
+        return json({
+          snapshot: {
+            ...snapshot,
+            payload: JSON.parse(snapshot.payload),
+            settings: snapshot.settings ? JSON.parse(snapshot.settings) : null,
+          },
+        })
+      }
+
+      return json({ error: 'method-not-allowed' }, { status: 405 })
+    },
+    '/favicon.ico': new Response(null, { status: 204 }),
+  },
+  fetch() {
+    return new Response('Not Found', { status: 404 })
   },
 })
 

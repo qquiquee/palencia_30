@@ -1,73 +1,85 @@
-# React + TypeScript + Vite
+# Palencia 30
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Editor arquitectonico 2D/3D hecho con React, Bun y SQLite. Permite dibujar una estancia, añadir muros libres, puertas, superficies y escaleras, y guardar proyectos localmente.
 
-Currently, two official plugins are available:
+## Stack
+- React 19
+- TypeScript
+- Bun
+- `@react-three/fiber` + `three` para la vista 3D
+- SQLite mediante `bun:sqlite`
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Funcionalidades actuales
+- Edicion en planta 2D y visualizacion 3D del mismo modelo.
+- Herramientas para estancia, muro libre, puerta, superficie y escalera.
+- Zoom y pan sobre el plano.
+- Edicion por propiedades de muros libres, puertas, superficies y escaleras.
+- Autosave del proyecto activo.
+- Undo / redo.
+- Gestion de proyectos: crear, abrir, renombrar, duplicar y borrar.
+- Snapshots por proyecto: crear, listar y abrir.
+- Exportacion e importacion JSON con validacion basica.
+- Multiseleccion con `Ctrl/Cmd + click`.
+- Agrupar y desagrupar muros libres, superficies y escaleras.
+- Snap con `Ctrl/Cmd` al mover o dibujar.
 
-## React Compiler
+## Arranque
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Requisitos
+- Bun instalado
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Desarrollo
+```powershell
+bun install
+bun run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Abre [http://localhost:3000](http://localhost:3000).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Checks
+```powershell
+bun run lint
+bun run build
 ```
+
+### Produccion local
+```powershell
+bun run build
+bun run start
+```
+
+## Persistencia
+- La aplicacion guarda datos en SQLite.
+- La base se crea en [data/palencia_30.sqlite](C:\Users\enriq\Desktop\palencia_30\data\palencia_30.sqlite).
+- El backend sirve:
+  - proyectos
+  - snapshots
+  - HTML de la aplicacion
+
+## Uso rapido
+1. Arranca la app con `bun run dev`.
+2. Crea una estancia en `Planta 2D` haciendo clic para colocar vertices.
+3. Pulsa `Cerrar estancia`.
+4. Añade superficies, escaleras, muros libres o puertas.
+5. Cambia a `Volumen 3D` para revisar el resultado.
+6. Guarda el proyecto o crea snapshots del estado actual.
+
+## Atajos e interacciones
+- `Ctrl/Cmd + click`: multiseleccion.
+- `Ctrl/Cmd` al mover o dibujar: snap a puntos cercanos.
+- `Delete` / `Backspace`: borrar seleccion.
+- `Ctrl/Cmd + Z`: undo.
+- `Ctrl/Cmd + Y` o `Ctrl/Cmd + Shift + Z`: redo.
+
+## Estructura principal
+- [src/App.tsx](C:\Users\enriq\Desktop\palencia_30\src\App.tsx): composicion de la UI y estado principal del editor.
+- [src/editor/design.ts](C:\Users\enriq\Desktop\palencia_30\src\editor\design.ts): utilidades geometricas, normalizacion e inicializacion del diseño.
+- [src/editor/types.ts](C:\Users\enriq\Desktop\palencia_30\src\editor\types.ts): tipos del dominio.
+- [src/components/Scene3D.tsx](C:\Users\enriq\Desktop\palencia_30\src\components\Scene3D.tsx): render 3D.
+- [server.ts](C:\Users\enriq\Desktop\palencia_30\server.ts): servidor Bun y API SQLite.
+
+## Limitaciones actuales
+- El editor sigue concentrando bastante logica en `App.tsx`.
+- No hay tests automaticos todavia.
+- La gestion de snapshots no incluye borrado ni renombrado.
+- La importacion JSON valida una estructura basica, no un esquema formal completo.

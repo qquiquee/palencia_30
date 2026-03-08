@@ -1,509 +1,66 @@
 ﻿
 import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState, type WheelEvent } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
-import { GizmoHelper, GizmoViewport, OrbitControls } from '@react-three/drei'
-import * as THREE from 'three'
+import { Scene3D } from './components/Scene3D'
+import {
+  buildProjectPreview,
+  clamp,
+  clampDoorToWall,
+  cloneDesign,
+  createDefaultDesign,
+  defaultProjectSettings,
+  defaultSceneStyle,
+  dedupeEntityKeys,
+  entityFromKey,
+  entityKeyOf,
+  getFreeWalls,
+  getRoomWalls,
+  inspectImportedDesign,
+  isGroupableEntityType,
+  maxViewWidth,
+  metersToSvg,
+  minViewWidth,
+  normalizeImportedDesign,
+  normalizeRect,
+  parseEntityKey,
+  pointRadius,
+  pointToViewBox,
+  polygonCentroid,
+  roundToGrid,
+  serializeForHistory,
+  svgHeight,
+  svgWidth,
+  toCanvas,
+  uid,
+} from './editor/design'
+import type {
+  Door,
+  DragDraft,
+  EntityKey,
+  EntityType,
+  Group,
+  GroupMoveMember,
+  Interaction,
+  MeterPoint,
+  OrbitState,
+  PersistedDesign,
+  Point,
+  ProjectSettings,
+  ProjectSummary,
+  SceneStyle,
+  SelectedEntity,
+  SnapshotSummary,
+  Stair,
+  Surface,
+  Tool,
+  ViewBox,
+  ViewMode,
+  WallDescriptor,
+  WallSegment,
+} from './editor/types'
 import './App.css'
 
-type Point = { id: string; x: number; y: number }
-type MeterPoint = { x: number; y: number }
-
-type WallSegment = {
-  id: string
-  start: Point
-  end: Point
-  color: string
-}
-
-type Door = {
-  id: string
-  wallId: string
-  offset: number
-  width: number
-  color: string
-}
-
-type Surface = {
-  id: string
-  x: number
-  y: number
-  width: number
-  depth: number
-  elevation: number
-  thickness: number
-  label: string
-  color: string
-}
-
-type Stair = {
-  id: string
-  x: number
-  y: number
-  width: number
-  depth: number
-  fromElevation: number
-  toElevation: number
-  steps: number
-  label: string
-  color: string
-}
-
-type SceneStyle = {
-  roomWallColor: string
-  floorColor: string
-  roomFillColor: string
-}
-
-type Tool = 'select' | 'pan' | 'draw-room' | 'wall' | 'door' | 'surface' | 'stairs'
-type ViewMode = '2d' | '3d'
-type SelectedEntity =
-  | { type: 'door'; id: string }
-  | { type: 'surface'; id: string }
-  | { type: 'stairs'; id: string }
-  | { type: 'wall'; id: string }
-  | null
-
-type ViewBox = { x: number; y: number; width: number; height: number }
-type DragDraft = { type: 'surface' | 'stairs'; start: MeterPoint; current: MeterPoint }
-
-type WallDescriptor = {
-  id: string
-  kind: 'room' | 'free'
-  start: Point
-  end: Point
-  dx: number
-  dy: number
-  angle: number
-  length: number
-  color: string
-}
-
-type Interaction =
-  | { type: 'pan'; originPointer: MeterPoint; originViewBox: ViewBox }
-  | { type: 'room-point'; pointId: string }
-  | { type: 'free-wall-start'; wallId: string }
-  | { type: 'free-wall-end'; wallId: string }
-  | { type: 'free-wall-move'; wallId: string; originPointer: MeterPoint; originStart: Point; originEnd: Point }
-  | { type: 'surface-move'; id: string; originPointer: MeterPoint; originX: number; originY: number }
-  | { type: 'stairs-move'; id: string; originPointer: MeterPoint; originX: number; originY: number }
-  | null
-
-type PersistedDesign = {
-  roomPoints: Point[]
-  freeWalls: WallSegment[]
-  doors: Door[]
-  surfaces: Surface[]
-  stairs: Stair[]
-  isRoomClosed: boolean
-  wallHeight: number
-  wallThickness: number
-  sceneStyle: SceneStyle
-}
-
-type ProjectSummary = {
-  id: string
-  name: string
-  preview: string | null
-  updated_at: string
-}
-
-type OrbitState = {
-  position: [number, number, number]
-  target: [number, number, number]
-}
-
-type ProjectSettings = {
-  planViewBox: ViewBox
-  preferredViewMode: ViewMode
-  orbit: OrbitState
-}
-
-const svgWidth = 960
-const svgHeight = 680
-const pixelsPerMeter = 120
-const pointRadius = 8
-const minViewWidth = 240
-const maxViewWidth = 3200
-const defaultSceneStyle: SceneStyle = {
-  roomWallColor: '#f7f2ea',
-  floorColor: '#dcc4a5',
-  roomFillColor: '#e3c698',
-}
-
-const defaultProjectSettings: ProjectSettings = {
-  planViewBox: { x: 0, y: 0, width: svgWidth, height: svgHeight },
-  preferredViewMode: '2d',
-  orbit: {
-    position: [7, 7, 8],
-    target: [2.5, 0, 2.5],
-  },
-}
-
-const sampleRoomPoints: Point[] = [
-  { id: 'rp1', x: 0.6, y: 0.6 },
-  { id: 'rp2', x: 4.06, y: 0.6 },
-  { id: 'rp3', x: 4.06, y: 4.7 },
-  { id: 'rp4', x: 2.45, y: 4.7 },
-  { id: 'rp5', x: 2.45, y: 3.1 },
-  { id: 'rp6', x: 1.65, y: 3.1 },
-  { id: 'rp7', x: 1.65, y: 4.7 },
-  { id: 'rp8', x: 0.6, y: 4.7 },
-]
-
-const sampleFreeWalls: WallSegment[] = [
-  {
-    id: 'fw1',
-    start: { id: 'fws1', x: 4.7, y: 1.1 },
-    end: { id: 'fwe1', x: 6.4, y: 1.1 },
-    color: '#d8c3b0',
-  },
-]
-
-const sampleDoors: Door[] = [
-  { id: 'd1', wallId: 'room-6', offset: 0.75, width: 0.9, color: '#c5672f' },
-  { id: 'd2', wallId: 'room-4', offset: 0.42, width: 0.8, color: '#c5672f' },
-]
-
-const sampleSurfaces: Surface[] = [
-  {
-    id: 's1',
-    x: 4.6,
-    y: 2.2,
-    width: 1.8,
-    depth: 1.4,
-    elevation: 0.45,
-    thickness: 0.18,
-    label: 'Tarima',
-    color: '#bd8b63',
-  },
-]
-
-const sampleStairs: Stair[] = [
-  {
-    id: 'st1',
-    x: 4.7,
-    y: 3.75,
-    width: 1.2,
-    depth: 1.6,
-    fromElevation: 0,
-    toElevation: 0.45,
-    steps: 4,
-    label: 'Peldaños',
-    color: '#76956f',
-  },
-]
-
-function uid(prefix: string) {
-  return `${prefix}-${Math.random().toString(36).slice(2, 9)}`
-}
-
-function roundToGrid(value: number, step = 0.1) {
-  return Math.round(value / step) * step
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value))
-}
-
-function metersToSvg(value: number) {
-  return value * pixelsPerMeter
-}
-
-function toCanvas(point: MeterPoint) {
-  return { x: metersToSvg(point.x), y: metersToSvg(point.y) }
-}
-
-function fromCanvas(x: number, y: number) {
-  return { x: roundToGrid(x / pixelsPerMeter), y: roundToGrid(y / pixelsPerMeter) }
-}
-
-function normalizeRect(start: MeterPoint, current: MeterPoint) {
-  return {
-    x: roundToGrid(Math.min(start.x, current.x)),
-    y: roundToGrid(Math.min(start.y, current.y)),
-    width: roundToGrid(Math.abs(current.x - start.x)),
-    depth: roundToGrid(Math.abs(current.y - start.y)),
-  }
-}
-
-function polygonCentroid(points: Point[]) {
-  if (points.length === 0) {
-    return { x: 0, y: 0 }
-  }
-
-  const total = points.reduce((acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }), { x: 0, y: 0 })
-  return { x: total.x / points.length, y: total.y / points.length }
-}
-
-function describeWall(id: string, kind: 'room' | 'free', start: Point, end: Point, color: string): WallDescriptor {
-  const dx = end.x - start.x
-  const dy = end.y - start.y
-  const length = Math.hypot(dx, dy)
-
-  return { id, kind, start, end, dx, dy, angle: Math.atan2(dy, dx), length, color }
-}
-
-function getRoomWalls(points: Point[], isClosed: boolean, color: string) {
-  if (!isClosed || points.length < 3) {
-    return []
-  }
-
-  return points.map((point, index) => describeWall(`room-${index}`, 'room', point, points[(index + 1) % points.length], color))
-}
-
-function getFreeWalls(walls: WallSegment[]) {
-  return walls.map((wall) => describeWall(`free-${wall.id}`, 'free', wall.start, wall.end, wall.color))
-}
-
-function getDoorSegments(length: number, door: Door | undefined) {
-  if (!door) {
-    return [{ start: 0, end: length }]
-  }
-
-  const halfWidth = door.width / 2
-  const gapStart = Math.max(0, door.offset - halfWidth)
-  const gapEnd = Math.min(length, door.offset + halfWidth)
-  return [{ start: 0, end: gapStart }, { start: gapEnd, end: length }].filter((segment) => segment.end - segment.start > 0.02)
-}
-
-function pointToViewBox(event: ReactPointerEvent<SVGSVGElement>, viewBox: ViewBox, bounds: DOMRect) {
-  const localX = event.clientX - bounds.left
-  const localY = event.clientY - bounds.top
-  const svgX = viewBox.x + (localX / bounds.width) * viewBox.width
-  const svgY = viewBox.y + (localY / bounds.height) * viewBox.height
-
-  return { svgX, svgY, meters: fromCanvas(svgX, svgY) }
-}
-
-function createDefaultDesign(): PersistedDesign {
-  return {
-    roomPoints: sampleRoomPoints,
-    freeWalls: sampleFreeWalls,
-    doors: sampleDoors,
-    surfaces: sampleSurfaces,
-    stairs: sampleStairs,
-    isRoomClosed: true,
-    wallHeight: 3.3,
-    wallThickness: 0.18,
-    sceneStyle: defaultSceneStyle,
-  }
-}
-
-function cloneDesign(design: PersistedDesign): PersistedDesign {
-  return JSON.parse(JSON.stringify(design)) as PersistedDesign
-}
-
-function serializeForHistory(design: PersistedDesign) {
-  return JSON.stringify(design)
-}
-
-function clampDoorToWall(door: Door, wall: WallDescriptor) {
-  const maxWidth = Math.max(0.6, roundToGrid(wall.length - 0.2))
-  const width = clamp(roundToGrid(door.width), 0.6, maxWidth)
-  const half = width / 2
-  const offset = clamp(roundToGrid(door.offset), half + 0.1, wall.length - half - 0.1)
-  return { ...door, width, offset }
-}
-
-function OrbitSync({
-  orbit,
-}: {
-  orbit: OrbitState
-}) {
-  const { camera, controls } = useThree()
-
-  useEffect(() => {
-    camera.position.set(...orbit.position)
-    if (controls && 'target' in controls) {
-      ;(controls as OrbitControlsImplLike).target.set(...orbit.target)
-      ;(controls as OrbitControlsImplLike).update()
-    }
-  }, [camera, controls, orbit])
-
-  return null
-}
-
-type OrbitControlsImplLike = {
-  target: { x: number; y: number; z: number; set: (x: number, y: number, z: number) => void }
-  update: () => void
-}
-
-function buildProjectPreview(design: PersistedDesign) {
-  const lines = [
-    ...getRoomWalls(design.roomPoints, design.isRoomClosed, design.sceneStyle.roomWallColor),
-    ...getFreeWalls(design.freeWalls),
-  ]
-
-  const svgLines = lines
-    .map((wall) => {
-      const start = toCanvas(wall.start)
-      const end = toCanvas(wall.end)
-      return `<line x1="${start.x / 6}" y1="${start.y / 6}" x2="${end.x / 6}" y2="${end.y / 6}" stroke="${wall.color}" stroke-width="3" stroke-linecap="round" />`
-    })
-    .join('')
-
-  const surfaceRects = design.surfaces
-    .map(
-      (surface) =>
-        `<rect x="${metersToSvg(surface.x) / 6}" y="${metersToSvg(surface.y) / 6}" width="${metersToSvg(surface.width) / 6}" height="${metersToSvg(surface.depth) / 6}" fill="${surface.color}" fill-opacity="0.35" stroke="${surface.color}" stroke-width="1.5" />`,
-    )
-    .join('')
-
-  const stairRects = design.stairs
-    .map(
-      (stair) =>
-        `<rect x="${metersToSvg(stair.x) / 6}" y="${metersToSvg(stair.y) / 6}" width="${metersToSvg(stair.width) / 6}" height="${metersToSvg(stair.depth) / 6}" fill="${stair.color}" fill-opacity="0.22" stroke="${stair.color}" stroke-width="1.5" />`,
-    )
-    .join('')
-
-  const doorLines = design.doors
-    .map((door) => {
-      const wall = lines.find((item) => item.id === door.wallId)
-      if (!wall) {
-        return ''
-      }
-
-      const startFactor = (door.offset - door.width / 2) / wall.length
-      const endFactor = (door.offset + door.width / 2) / wall.length
-      const start = toCanvas({ x: wall.start.x + wall.dx * startFactor, y: wall.start.y + wall.dy * startFactor })
-      const end = toCanvas({ x: wall.start.x + wall.dx * endFactor, y: wall.start.y + wall.dy * endFactor })
-      return `<line x1="${start.x / 6}" y1="${start.y / 6}" x2="${end.x / 6}" y2="${end.y / 6}" stroke="${door.color}" stroke-width="3" stroke-linecap="round" />`
-    })
-    .join('')
-
-  const roomPolygon =
-    design.isRoomClosed && design.roomPoints.length > 2
-      ? `<polygon points="${design.roomPoints.map((point) => `${metersToSvg(point.x) / 6},${metersToSvg(point.y) / 6}`).join(' ')}" fill="${design.sceneStyle.roomFillColor}" fill-opacity="0.15" stroke="${design.sceneStyle.roomFillColor}" stroke-opacity="0.45" stroke-width="1" />`
-      : ''
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 136"><rect width="192" height="136" rx="14" fill="#f7f1e8" />${roomPolygon}${surfaceRects}${stairRects}${svgLines}${doorLines}</svg>`
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
-}
-
-function Scene3D({
-  roomPoints,
-  isRoomClosed,
-  freeWalls,
-  doors,
-  surfaces,
-  stairs,
-  wallThickness,
-  wallHeight,
-  sceneStyle,
-  orbit,
-  onOrbitChange,
-}: PersistedDesign & {
-  orbit: OrbitState
-  onOrbitChange: (orbit: OrbitState) => void
-}) {
-  const roomShape = useMemo(() => {
-    if (!isRoomClosed || roomPoints.length < 3) {
-      return null
-    }
-
-    const shape = new THREE.Shape()
-    shape.moveTo(roomPoints[0].x, roomPoints[0].y)
-    roomPoints.slice(1).forEach((point) => shape.lineTo(point.x, point.y))
-    shape.lineTo(roomPoints[0].x, roomPoints[0].y)
-    return shape
-  }, [isRoomClosed, roomPoints])
-
-  const walls = useMemo(() => [...getRoomWalls(roomPoints, isRoomClosed, sceneStyle.roomWallColor), ...getFreeWalls(freeWalls)], [freeWalls, isRoomClosed, roomPoints, sceneStyle.roomWallColor])
-
-  return (
-    <Canvas camera={{ position: orbit.position, fov: 42 }}>
-      <color attach="background" args={['#efe6d6']} />
-      <OrbitSync orbit={orbit} />
-      <ambientLight intensity={1.45} />
-      <directionalLight castShadow intensity={1.2} position={[10, 12, 5]} />
-      <gridHelper args={[20, 40, '#ad9e8b', '#d7ccbb']} position={[3.5, 0, 3.5]} />
-
-      {roomShape ? (
-        <group rotation={[-Math.PI / 2, 0, 0]}>
-          <mesh position={[0, -0.01, 0]} receiveShadow>
-            <shapeGeometry args={[roomShape]} />
-            <meshStandardMaterial color={sceneStyle.floorColor} />
-          </mesh>
-        </group>
-      ) : null}
-
-      {surfaces.map((surface) => (
-        <mesh
-          castShadow
-          key={surface.id}
-          position={[surface.x + surface.width / 2, surface.elevation + surface.thickness / 2, surface.y + surface.depth / 2]}
-          receiveShadow
-        >
-          <boxGeometry args={[surface.width, surface.thickness, surface.depth]} />
-          <meshStandardMaterial color={surface.color} />
-        </mesh>
-      ))}
-
-      {stairs.map((stair) => {
-        const horizontalIsWidth = stair.width >= stair.depth
-        const stepRun = (horizontalIsWidth ? stair.width : stair.depth) / stair.steps
-        const stepRise = (stair.toElevation - stair.fromElevation) / stair.steps
-
-        return (
-          <group key={stair.id}>
-            {Array.from({ length: stair.steps }).map((_, index) => {
-              const sizeX = horizontalIsWidth ? stepRun : stair.width
-              const sizeZ = horizontalIsWidth ? stair.depth : stepRun
-              const posX = horizontalIsWidth ? stair.x + stepRun * index + sizeX / 2 : stair.x + stair.width / 2
-              const posZ = horizontalIsWidth ? stair.y + stair.depth / 2 : stair.y + stepRun * index + sizeZ / 2
-
-              return (
-                <mesh castShadow key={`${stair.id}-${index}`} position={[posX, stair.fromElevation + stepRise * (index + 1) / 2, posZ]} receiveShadow>
-                  <boxGeometry args={[sizeX, stepRise * (index + 1), sizeZ]} />
-                  <meshStandardMaterial color={stair.color} />
-                </mesh>
-              )
-            })}
-          </group>
-        )
-      })}
-
-      {walls.map((wall) => {
-        const door = doors.find((item) => item.wallId === wall.id)
-        const segments = getDoorSegments(wall.length, door)
-
-        return segments.map((segment) => {
-          const segmentLength = segment.end - segment.start
-          const offset = segment.start + segmentLength / 2
-          const centerX = wall.start.x + (wall.dx / wall.length) * offset
-          const centerZ = wall.start.y + (wall.dy / wall.length) * offset
-
-          return (
-            <mesh castShadow key={`${wall.id}-${segment.start}`} position={[centerX, wallHeight / 2, centerZ]} receiveShadow rotation={[0, -wall.angle, 0]}>
-              <boxGeometry args={[segmentLength, wallHeight, wallThickness]} />
-              <meshStandardMaterial color={wall.color} />
-            </mesh>
-          )
-        })
-      })}
-
-      <OrbitControls
-        makeDefault
-        maxDistance={22}
-        minDistance={3}
-        onEnd={(event) => {
-          const control = event.target as OrbitControlsImplLike & {
-            object: { position: { x: number; y: number; z: number } }
-          }
-          onOrbitChange({
-            position: [control.object.position.x, control.object.position.y, control.object.position.z],
-            target: [(control.target as { x: number }).x, (control.target as { y: number }).y, (control.target as { z: number }).z],
-          })
-        }}
-      />
-      <GizmoHelper alignment="bottom-right" margin={[84, 84]}>
-        <GizmoViewport axisColors={['#d06a35', '#3f6a52', '#7a4034']} labelColor="#f8f1e5" />
-      </GizmoHelper>
-    </Canvas>
-  )
-}
-
 function App() {
+  type TopMenu = 'project' | 'view' | 'tools' | 'save' | 'scene' | null
   const initial = createDefaultDesign()
   const initialSettings = defaultProjectSettings
   const [roomPoints, setRoomPoints] = useState<Point[]>(initial.roomPoints)
@@ -526,11 +83,17 @@ function App() {
   const [saveMessage, setSaveMessage] = useState('')
   const [autosaveState, setAutosaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [projects, setProjects] = useState<ProjectSummary[]>([])
+  const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([])
   const [activeProjectId, setActiveProjectId] = useState('default')
   const [activeProjectName, setActiveProjectName] = useState('Proyecto principal')
   const [history, setHistory] = useState<PersistedDesign[]>([])
   const [future, setFuture] = useState<PersistedDesign[]>([])
   const [propertiesOpen, setPropertiesOpen] = useState(true)
+  const [activeTopMenu, setActiveTopMenu] = useState<TopMenu>('tools')
+  const [selectedKeys, setSelectedKeys] = useState<EntityKey[]>(selected ? [entityKeyOf(selected)] : [])
+  const [groups, setGroups] = useState<Group[]>(initial.groups ?? [])
+  const [jsonEditorText, setJsonEditorText] = useState(() => JSON.stringify(initial, null, 2))
+  const [jsonEditorError, setJsonEditorError] = useState('')
   const lastSnapshotRef = useRef<string>('')
   const lastDesignRef = useRef<PersistedDesign>(cloneDesign(initial))
   const currentDesignRef = useRef<PersistedDesign>(cloneDesign(initial))
@@ -543,122 +106,68 @@ function App() {
   const roomWalls = useMemo(() => getRoomWalls(roomPoints, isRoomClosed, sceneStyle.roomWallColor), [isRoomClosed, roomPoints, sceneStyle.roomWallColor])
   const allWalls = useMemo(() => [...roomWalls, ...getFreeWalls(freeWalls)], [freeWalls, roomWalls])
   const centroid = useMemo(() => polygonCentroid(roomPoints), [roomPoints])
+  const persistableDesign = useMemo<PersistedDesign>(
+    () => ({
+      roomPoints,
+      freeWalls,
+      doors,
+      surfaces,
+      stairs,
+      groups,
+      isRoomClosed,
+      wallHeight,
+      wallThickness,
+      sceneStyle,
+    }),
+    [doors, freeWalls, groups, isRoomClosed, roomPoints, sceneStyle, stairs, surfaces, wallHeight, wallThickness],
+  )
+  const projectSettings = useMemo<ProjectSettings>(
+    () => ({
+      planViewBox: viewBox,
+      preferredViewMode: viewMode,
+      orbit,
+    }),
+    [orbit, viewBox, viewMode],
+  )
+  const jsonInspection = useMemo(() => {
+    try {
+      return inspectImportedDesign(JSON.parse(jsonEditorText))
+    } catch {
+      return {
+        normalized: null,
+        errors: ['El JSON no es valido.'],
+        warnings: [],
+      }
+    }
+  }, [jsonEditorText])
 
   const selectedDoor = selected?.type === 'door' ? doors.find((door) => door.id === selected.id) ?? null : null
   const selectedSurface = selected?.type === 'surface' ? surfaces.find((surface) => surface.id === selected.id) ?? null : null
   const selectedStair = selected?.type === 'stairs' ? stairs.find((stair) => stair.id === selected.id) ?? null : null
   const selectedWall = selected?.type === 'wall' ? freeWalls.find((wall) => wall.id === selected.id) ?? null : null
+  const selectedGroupableKeys = useMemo(
+    () =>
+      dedupeEntityKeys(selectedKeys).filter((key) => {
+        const parsed = parseEntityKey(key)
+        return parsed ? isGroupableEntityType(parsed.type) : false
+      }),
+    [selectedKeys],
+  )
+  const selectedGroups = useMemo(
+    () => groups.filter((group) => group.itemKeys.some((key) => selectedGroupableKeys.includes(key))),
+    [groups, selectedGroupableKeys],
+  )
 
-  useEffect(() => {
-    const stopAll = () => {
-      setInteraction(null)
-
-      if (!dragDraft) {
-        return
-      }
-
-      const rect = normalizeRect(dragDraft.start, dragDraft.current)
-      if (rect.width >= 0.3 && rect.depth >= 0.3) {
-        if (dragDraft.type === 'surface') {
-          const surface: Surface = { id: uid('s'), label: 'Plataforma', elevation: 0.3, thickness: 0.18, color: '#bd8b63', ...rect }
-          setSurfaces((current) => [...current, surface])
-          setSelected({ type: 'surface', id: surface.id })
-        } else {
-          const stair: Stair = { id: uid('st'), label: 'Escalera', fromElevation: 0, toElevation: 0.45, steps: 4, color: '#76956f', ...rect }
-          setStairs((current) => [...current, stair])
-          setSelected({ type: 'stairs', id: stair.id })
-        }
-      }
-
-      setDragDraft(null)
-      queueMicrotask(() => commitGestureHistory())
-    }
-
-    window.addEventListener('pointerup', stopAll)
-    return () => window.removeEventListener('pointerup', stopAll)
-  }, [dragDraft])
-
-  useEffect(() => {
-    if (!selected) {
-      return
-    }
-
-    if (selected.type === 'door' && !doors.some((door) => door.id === selected.id)) {
-      setSelected(null)
-    }
-    if (selected.type === 'surface' && !surfaces.some((surface) => surface.id === selected.id)) {
-      setSelected(null)
-    }
-    if (selected.type === 'stairs' && !stairs.some((stair) => stair.id === selected.id)) {
-      setSelected(null)
-    }
-    if (selected.type === 'wall' && !freeWalls.some((wall) => wall.id === selected.id)) {
-      setSelected(null)
-    }
-  }, [doors, freeWalls, selected, stairs, surfaces])
-
-  useEffect(() => {
-    const loadProjects = async () => {
-      const response = await fetch('/api/projects')
-      if (!response.ok) {
-        return
-      }
-
-      const payload = (await response.json()) as { projects: ProjectSummary[] }
-      setProjects(payload.projects)
-      const active = payload.projects.find((project) => project.id === activeProjectId) ?? payload.projects[0]
-      if (active) {
-        setActiveProjectId(active.id)
-        setActiveProjectName(active.name)
-        void openProject(active.id)
-      }
-    }
-
-    void loadProjects()
-  }, [])
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
-        event.preventDefault()
-        undo()
-      }
-
-      if (((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') || ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'z')) {
-        event.preventDefault()
-        redo()
-      }
-
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selected) {
-        const target = event.target as HTMLElement | null
-        if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) {
-          return
-        }
-        event.preventDefault()
-        deleteSelected()
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  })
-
-  const persistableDesign: PersistedDesign = {
-    roomPoints,
-    freeWalls,
-    doors,
-    surfaces,
-    stairs,
-    isRoomClosed,
-    wallHeight,
-    wallThickness,
-    sceneStyle,
+  const syncJsonEditorFromDesign = (design: PersistedDesign) => {
+    setJsonEditorText(JSON.stringify(design, null, 2))
+    setJsonEditorError('')
   }
-  currentDesignRef.current = persistableDesign
-  const projectSettings: ProjectSettings = {
-    planViewBox: viewBox,
-    preferredViewMode: viewMode,
-    orbit,
+
+  const syncCurrentDesignSnapshot = (design: PersistedDesign) => {
+    const cloned = cloneDesign(design)
+    lastDesignRef.current = cloned
+    currentDesignRef.current = cloneDesign(design)
+    lastSnapshotRef.current = serializeForHistory(cloned)
   }
 
   const applyDesign = (design: PersistedDesign) => {
@@ -667,16 +176,203 @@ function App() {
     setDoors(design.doors ?? [])
     setSurfaces(design.surfaces ?? [])
     setStairs(design.stairs ?? [])
+    setGroups(design.groups ?? [])
     setIsRoomClosed(design.isRoomClosed ?? false)
     setWallHeight(design.wallHeight ?? 3.3)
     setWallThickness(design.wallThickness ?? 0.18)
     setSceneStyle(design.sceneStyle ?? defaultSceneStyle)
   }
 
+  const clearSelection = () => {
+    setSelected(null)
+    setSelectedKeys([])
+  }
+
+  const selectEntity = (entity: Exclude<SelectedEntity, null>, additive = false) => {
+    const key = entityKeyOf(entity)
+
+    if (!additive) {
+      setSelected(entity)
+      setSelectedKeys([key])
+      return
+    }
+
+    if (selectedEntityKeys.includes(key)) {
+      const next = selectedEntityKeys.filter((item) => item !== key)
+      setSelectedKeys(next)
+      setSelected(next[0] ? entityFromKey(next[0]) : null)
+      return
+    }
+
+    setSelected(entity)
+    setSelectedKeys(dedupeEntityKeys([...selectedEntityKeys, key]))
+  }
+
+  const selectedEntityKeys = selected ? dedupeEntityKeys([...selectedKeys, entityKeyOf(selected)]) : dedupeEntityKeys(selectedKeys)
+
   const applyProjectSettings = (settings?: ProjectSettings | null) => {
     setViewBox(settings?.planViewBox ?? defaultProjectSettings.planViewBox)
     setViewMode(settings?.preferredViewMode ?? defaultProjectSettings.preferredViewMode)
     setOrbit(settings?.orbit ?? defaultProjectSettings.orbit)
+  }
+
+  const removeDeletedKeysFromGroups = (deletedKeys: EntityKey[]) => {
+    setGroups((current) =>
+      current
+        .map((group) => ({
+          ...group,
+          itemKeys: group.itemKeys.filter((key) => !deletedKeys.includes(key)),
+        }))
+        .filter((group) => group.itemKeys.length >= 2),
+    )
+  }
+
+  const getGroupMoveMembers = (key: EntityKey): GroupMoveMember[] => {
+    const activeGroup = groups.find((group) => group.itemKeys.includes(key))
+    const keys = activeGroup ? activeGroup.itemKeys : [key]
+
+    return keys
+      .map((itemKey) => {
+        const parsed = parseEntityKey(itemKey)
+        if (!parsed) {
+          return null
+        }
+
+        if (parsed.type === 'wall') {
+          const wall = freeWalls.find((item) => item.id === parsed.id)
+          return wall ? { type: 'wall' as const, id: wall.id, originStart: wall.start, originEnd: wall.end } : null
+        }
+
+        if (parsed.type === 'surface') {
+          const surface = surfaces.find((item) => item.id === parsed.id)
+          return surface ? { type: 'surface' as const, id: surface.id, originX: surface.x, originY: surface.y } : null
+        }
+
+        if (parsed.type === 'stairs') {
+          const stair = stairs.find((item) => item.id === parsed.id)
+          return stair ? { type: 'stairs' as const, id: stair.id, originX: stair.x, originY: stair.y } : null
+        }
+
+        return null
+      })
+      .filter((member): member is GroupMoveMember => member !== null)
+  }
+
+  const collectSnapTargets = (excludedKeys: EntityKey[] = []) => {
+    const excluded = new Set(excludedKeys)
+    const targets: MeterPoint[] = roomPoints.map(({ x, y }) => ({ x, y }))
+
+    freeWalls.forEach((wall) => {
+      if (!excluded.has(`wall:${wall.id}`)) {
+        targets.push({ x: wall.start.x, y: wall.start.y }, { x: wall.end.x, y: wall.end.y })
+      }
+    })
+
+    surfaces.forEach((surface) => {
+      if (excluded.has(`surface:${surface.id}`)) {
+        return
+      }
+      targets.push(
+        { x: surface.x, y: surface.y },
+        { x: surface.x + surface.width, y: surface.y },
+        { x: surface.x, y: surface.y + surface.depth },
+        { x: surface.x + surface.width, y: surface.y + surface.depth },
+        { x: surface.x + surface.width / 2, y: surface.y + surface.depth / 2 },
+      )
+    })
+
+    stairs.forEach((stair) => {
+      if (excluded.has(`stairs:${stair.id}`)) {
+        return
+      }
+      targets.push(
+        { x: stair.x, y: stair.y },
+        { x: stair.x + stair.width, y: stair.y },
+        { x: stair.x, y: stair.y + stair.depth },
+        { x: stair.x + stair.width, y: stair.y + stair.depth },
+        { x: stair.x + stair.width / 2, y: stair.y + stair.depth / 2 },
+      )
+    })
+
+    return targets
+  }
+
+  const snapPoint = (point: MeterPoint, active: boolean, excludedKeys: EntityKey[] = []) => {
+    if (!active) {
+      return point
+    }
+
+    const threshold = 0.35
+    let best = point
+    let bestDistance = Infinity
+
+    collectSnapTargets(excludedKeys).forEach((target) => {
+      const distance = Math.hypot(target.x - point.x, target.y - point.y)
+      if (distance < bestDistance && distance <= threshold) {
+        best = { x: roundToGrid(target.x), y: roundToGrid(target.y) }
+        bestDistance = distance
+      }
+    })
+
+    return best
+  }
+
+  const applyGroupMove = (members: GroupMoveMember[], dx: number, dy: number) => {
+    const roundedDx = roundToGrid(dx)
+    const roundedDy = roundToGrid(dy)
+
+    setFreeWalls((current) =>
+      current.map((wall) => {
+        const member = members.find((item) => item.type === 'wall' && item.id === wall.id)
+        if (!member || member.type !== 'wall') {
+          return wall
+        }
+
+        return {
+          ...wall,
+          start: {
+            ...wall.start,
+            x: roundToGrid(member.originStart.x + roundedDx),
+            y: roundToGrid(member.originStart.y + roundedDy),
+          },
+          end: {
+            ...wall.end,
+            x: roundToGrid(member.originEnd.x + roundedDx),
+            y: roundToGrid(member.originEnd.y + roundedDy),
+          },
+        }
+      }),
+    )
+
+    setSurfaces((current) =>
+      current.map((surface) => {
+        const member = members.find((item) => item.type === 'surface' && item.id === surface.id)
+        if (!member || member.type !== 'surface') {
+          return surface
+        }
+
+        return {
+          ...surface,
+          x: roundToGrid(member.originX + roundedDx),
+          y: roundToGrid(member.originY + roundedDy),
+        }
+      }),
+    )
+
+    setStairs((current) =>
+      current.map((stair) => {
+        const member = members.find((item) => item.type === 'stairs' && item.id === stair.id)
+        if (!member || member.type !== 'stairs') {
+          return stair
+        }
+
+        return {
+          ...stair,
+          x: roundToGrid(member.originX + roundedDx),
+          y: roundToGrid(member.originY + roundedDy),
+        }
+      }),
+    )
   }
 
   const beginGestureHistory = () => {
@@ -707,6 +403,345 @@ function App() {
 
     gestureSnapshotRef.current = null
   }
+
+  const deleteSelected = () => {
+    if (selectedEntityKeys.length === 0) {
+      return
+    }
+
+    const parsed = selectedEntityKeys
+      .map((key) => ({ key, parsed: parseEntityKey(key) }))
+      .filter((item): item is { key: EntityKey; parsed: { type: EntityType; id: string } } => item.parsed !== null)
+
+    const deletedWallIds = parsed.filter((item) => item.parsed.type === 'wall').map((item) => item.parsed.id)
+    const deletedDoorIds = parsed.filter((item) => item.parsed.type === 'door').map((item) => item.parsed.id)
+    const deletedSurfaceIds = parsed.filter((item) => item.parsed.type === 'surface').map((item) => item.parsed.id)
+    const deletedStairIds = parsed.filter((item) => item.parsed.type === 'stairs').map((item) => item.parsed.id)
+
+    setDoors((current) =>
+      current.filter((door) => !deletedDoorIds.includes(door.id) && !deletedWallIds.some((wallId) => door.wallId === `free-${wallId}`)),
+    )
+    setSurfaces((current) => current.filter((surface) => !deletedSurfaceIds.includes(surface.id)))
+    setStairs((current) => current.filter((stair) => !deletedStairIds.includes(stair.id)))
+    setFreeWalls((current) => current.filter((wall) => !deletedWallIds.includes(wall.id)))
+    removeDeletedKeysFromGroups(parsed.map((item) => item.key))
+    clearSelection()
+  }
+
+  const groupSelected = () => {
+    if (selectedGroupableKeys.length < 2) {
+      return
+    }
+
+    setGroups((current) => {
+      const stripped = current
+        .map((group) => ({
+          ...group,
+          itemKeys: group.itemKeys.filter((key) => !selectedGroupableKeys.includes(key)),
+        }))
+        .filter((group) => group.itemKeys.length >= 2)
+
+      return [
+        {
+          id: uid('group'),
+          name: `Grupo ${stripped.length + 1}`,
+          itemKeys: selectedGroupableKeys,
+        },
+        ...stripped,
+      ]
+    })
+    setSaveMessage(`Grupo creado con ${selectedGroupableKeys.length} elementos.`)
+  }
+
+  const ungroupSelected = () => {
+    if (selectedGroups.length === 0) {
+      return
+    }
+
+    setGroups((current) =>
+      current
+        .map((group) =>
+          selectedGroups.some((selectedGroup) => selectedGroup.id === group.id)
+            ? {
+                ...group,
+                itemKeys: group.itemKeys.filter((key) => !selectedGroupableKeys.includes(key)),
+              }
+            : group,
+        )
+        .filter((group) => group.itemKeys.length >= 2),
+    )
+    setSaveMessage('Elementos desagrupados.')
+  }
+
+  const undo = () => {
+    if (history.length === 0) {
+      return
+    }
+
+    const previous = history[history.length - 1]
+    skipHistoryRef.current = true
+    setHistory((current) => current.slice(0, -1))
+    setFuture((current) => [cloneDesign(persistableDesign), ...current])
+    applyDesign(cloneDesign(previous))
+    clearSelection()
+    setSaveMessage('Undo aplicado.')
+    lastDesignRef.current = cloneDesign(previous)
+    lastSnapshotRef.current = serializeForHistory(previous)
+  }
+
+  const redo = () => {
+    if (future.length === 0) {
+      return
+    }
+
+    const [next, ...rest] = future
+    skipHistoryRef.current = true
+    setFuture(rest)
+    setHistory((current) => [...current.slice(-59), cloneDesign(persistableDesign)])
+    applyDesign(cloneDesign(next))
+    clearSelection()
+    setSaveMessage('Redo aplicado.')
+    lastDesignRef.current = cloneDesign(next)
+    lastSnapshotRef.current = serializeForHistory(next)
+  }
+
+  const saveProjectToServer = async (mode: 'manual' | 'auto' = 'manual') => {
+    const preview = buildProjectPreview(persistableDesign)
+    const response = await fetch(`/api/projects/${activeProjectId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        design: persistableDesign,
+        settings: projectSettings,
+        preview,
+      }),
+    })
+
+    if (!response.ok) {
+      setAutosaveState('error')
+      if (mode === 'manual') {
+        setSaveMessage('No se pudo guardar en SQLite.')
+      }
+      return
+    }
+
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === activeProjectId
+          ? {
+              ...project,
+              updated_at: new Date().toISOString(),
+              preview,
+            }
+          : project,
+      ),
+    )
+    setAutosaveState('saved')
+    if (mode === 'manual') {
+      setSaveMessage(`Proyecto "${activeProjectName}" guardado en SQLite.`)
+    }
+  }
+
+  const loadSnapshots = async (projectId: string) => {
+    const response = await fetch(`/api/projects/${projectId}/snapshots`)
+    if (!response.ok) {
+      setSnapshots([])
+      return
+    }
+
+    const payload = (await response.json()) as { snapshots: SnapshotSummary[] }
+    setSnapshots(payload.snapshots)
+  }
+
+  const openProject = async (projectId: string) => {
+    const response = await fetch(`/api/projects/${projectId}`)
+    if (!response.ok) {
+      setSaveMessage('No se pudo abrir el proyecto.')
+      return
+    }
+
+    const payload = (await response.json()) as {
+      project: { id: string; name: string; payload: PersistedDesign | null; settings: ProjectSettings | null }
+    }
+
+    setActiveProjectId(payload.project.id)
+    setActiveProjectName(payload.project.name)
+    clearSelection()
+    setTool('select')
+    setHistory([])
+    setFuture([])
+    skipAutosaveRef.current = true
+
+    if (payload.project.payload) {
+      const normalized = normalizeImportedDesign(payload.project.payload)
+      if (!normalized) {
+        setSaveMessage(`Proyecto "${payload.project.name}" con diseño invalido.`)
+        return
+      }
+      skipHistoryRef.current = true
+      applyDesign(normalized)
+      syncJsonEditorFromDesign(normalized)
+      applyProjectSettings(payload.project.settings)
+      syncCurrentDesignSnapshot(normalized)
+      setAutosaveState('idle')
+      await loadSnapshots(payload.project.id)
+      setSaveMessage(`Proyecto "${payload.project.name}" abierto.`)
+      return
+    }
+
+    const clean = createDefaultDesign()
+    const emptyDesign = {
+      ...clean,
+      roomPoints: [],
+      freeWalls: [],
+      doors: [],
+      surfaces: [],
+      stairs: [],
+      isRoomClosed: false,
+    }
+    skipHistoryRef.current = true
+    applyDesign(emptyDesign)
+    syncJsonEditorFromDesign(emptyDesign)
+    applyProjectSettings(payload.project.settings ?? defaultProjectSettings)
+    setTool('draw-room')
+    syncCurrentDesignSnapshot(emptyDesign)
+    setAutosaveState('idle')
+    await loadSnapshots(payload.project.id)
+    setSaveMessage(`Proyecto "${payload.project.name}" abierto sin diseño aún.`)
+  }
+
+  useEffect(() => {
+    currentDesignRef.current = persistableDesign
+  }, [persistableDesign])
+
+  useEffect(() => {
+    const stopAll = () => {
+      setInteraction(null)
+
+      if (!dragDraft) {
+        return
+      }
+
+      const rect = normalizeRect(dragDraft.start, dragDraft.current)
+      if (rect.width >= 0.3 && rect.depth >= 0.3) {
+        if (dragDraft.type === 'surface') {
+          const surface: Surface = { id: uid('s'), label: 'Plataforma', elevation: 0.3, thickness: 0.18, color: '#bd8b63', ...rect }
+          setSurfaces((current) => [...current, surface])
+          setSelected({ type: 'surface', id: surface.id })
+          setSelectedKeys([`surface:${surface.id}`])
+        } else {
+          const stair: Stair = { id: uid('st'), label: 'Escalera', fromElevation: 0, toElevation: 0.45, steps: 4, color: '#76956f', ...rect }
+          setStairs((current) => [...current, stair])
+          setSelected({ type: 'stairs', id: stair.id })
+          setSelectedKeys([`stairs:${stair.id}`])
+        }
+      }
+
+      setDragDraft(null)
+      queueMicrotask(() => commitGestureHistory())
+    }
+
+    window.addEventListener('pointerup', stopAll)
+    return () => window.removeEventListener('pointerup', stopAll)
+  }, [dragDraft])
+
+  useEffect(() => {
+    const loadProjects = async () => {
+      const response = await fetch('/api/projects')
+      if (!response.ok) {
+        return
+      }
+
+      const payload = (await response.json()) as { projects: ProjectSummary[] }
+      setProjects(payload.projects)
+      const active = payload.projects.find((project) => project.id === 'default') ?? payload.projects[0]
+      if (!active) {
+        return
+      }
+
+      const projectResponse = await fetch(`/api/projects/${active.id}`)
+      if (!projectResponse.ok) {
+        return
+      }
+
+      const projectPayload = (await projectResponse.json()) as {
+        project: { id: string; name: string; payload: PersistedDesign | null; settings: ProjectSettings | null }
+      }
+
+      setActiveProjectId(projectPayload.project.id)
+      setActiveProjectName(projectPayload.project.name)
+      clearSelection()
+      setTool('select')
+      setHistory([])
+      setFuture([])
+      skipAutosaveRef.current = true
+
+      if (projectPayload.project.payload) {
+        const normalized = normalizeImportedDesign(projectPayload.project.payload)
+        if (!normalized) {
+          setSaveMessage(`Proyecto "${projectPayload.project.name}" con diseño invalido.`)
+          return
+        }
+        skipHistoryRef.current = true
+        applyDesign(normalized)
+        syncJsonEditorFromDesign(normalized)
+        applyProjectSettings(projectPayload.project.settings)
+        syncCurrentDesignSnapshot(normalized)
+        setAutosaveState('idle')
+        setSaveMessage(`Proyecto "${projectPayload.project.name}" abierto.`)
+        await loadSnapshots(projectPayload.project.id)
+        return
+      }
+
+      const clean = createDefaultDesign()
+      const emptyDesign = {
+        ...clean,
+        roomPoints: [],
+        freeWalls: [],
+        doors: [],
+        surfaces: [],
+        stairs: [],
+        isRoomClosed: false,
+      }
+      skipHistoryRef.current = true
+      applyDesign(emptyDesign)
+      syncJsonEditorFromDesign(emptyDesign)
+      applyProjectSettings(projectPayload.project.settings ?? defaultProjectSettings)
+      setTool('draw-room')
+      syncCurrentDesignSnapshot(emptyDesign)
+      setAutosaveState('idle')
+      setSaveMessage(`Proyecto "${projectPayload.project.name}" abierto sin diseño aún.`)
+      await loadSnapshots(projectPayload.project.id)
+    }
+
+    void loadProjects()
+  }, [])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
+        event.preventDefault()
+        undo()
+      }
+
+      if (((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') || ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'z')) {
+        event.preventDefault()
+        redo()
+      }
+
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selected) {
+        const target = event.target as HTMLElement | null
+        if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) {
+          return
+        }
+        event.preventDefault()
+        deleteSelected()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  })
 
   useEffect(() => {
     const snapshot = serializeForHistory(persistableDesign)
@@ -748,9 +783,38 @@ function App() {
       clearTimeout(autosaveTimeoutRef.current)
     }
 
-    setAutosaveState('saving')
     autosaveTimeoutRef.current = setTimeout(() => {
-      void saveProjectToServer('auto')
+      void (async () => {
+        setAutosaveState('saving')
+        const preview = buildProjectPreview(persistableDesign)
+        const response = await fetch(`/api/projects/${activeProjectId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            design: persistableDesign,
+            settings: projectSettings,
+            preview,
+          }),
+        })
+
+        if (!response.ok) {
+          setAutosaveState('error')
+          return
+        }
+
+        setProjects((current) =>
+          current.map((project) =>
+            project.id === activeProjectId
+              ? {
+                  ...project,
+                  updated_at: new Date().toISOString(),
+                  preview,
+                }
+              : project,
+          ),
+        )
+        setAutosaveState('saved')
+      })()
     }, 1200)
 
     return () => {
@@ -760,43 +824,21 @@ function App() {
     }
   }, [activeProjectId, persistableDesign, projectSettings])
 
-  const undo = () => {
-    if (history.length === 0) {
+  const saveDesign = async () => {
+    void saveProjectToServer('manual')
+  }
+
+  const createSnapshot = async () => {
+    const name = window.prompt('Nombre del snapshot', `${activeProjectName} ${new Date().toLocaleString('es-ES')}`)
+    if (!name) {
       return
     }
 
-    const previous = history[history.length - 1]
-    skipHistoryRef.current = true
-    setHistory((current) => current.slice(0, -1))
-    setFuture((current) => [cloneDesign(persistableDesign), ...current])
-    applyDesign(cloneDesign(previous))
-    setSelected(null)
-    setSaveMessage('Undo aplicado.')
-    lastDesignRef.current = cloneDesign(previous)
-    lastSnapshotRef.current = serializeForHistory(previous)
-  }
-
-  const redo = () => {
-    if (future.length === 0) {
-      return
-    }
-
-    const [next, ...rest] = future
-    skipHistoryRef.current = true
-    setFuture(rest)
-    setHistory((current) => [...current.slice(-59), cloneDesign(persistableDesign)])
-    applyDesign(cloneDesign(next))
-    setSelected(null)
-    setSaveMessage('Redo aplicado.')
-    lastDesignRef.current = cloneDesign(next)
-    lastSnapshotRef.current = serializeForHistory(next)
-  }
-
-  const saveProjectToServer = async (mode: 'manual' | 'auto' = 'manual') => {
-    const response = await fetch(`/api/projects/${activeProjectId}`, {
-      method: 'PUT',
+    const response = await fetch(`/api/projects/${activeProjectId}/snapshots`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        name,
         design: persistableDesign,
         settings: projectSettings,
         preview: buildProjectPreview(persistableDesign),
@@ -804,32 +846,43 @@ function App() {
     })
 
     if (!response.ok) {
-      setAutosaveState('error')
-      if (mode === 'manual') {
-        setSaveMessage('No se pudo guardar en SQLite.')
-      }
+      setSaveMessage('No se pudo crear el snapshot.')
       return
     }
 
-    setProjects((current) =>
-      current.map((project) =>
-        project.id === activeProjectId
-          ? {
-              ...project,
-              updated_at: new Date().toISOString(),
-              preview: buildProjectPreview(persistableDesign),
-            }
-          : project,
-      ),
-    )
-    setAutosaveState('saved')
-    if (mode === 'manual') {
-      setSaveMessage(`Proyecto "${activeProjectName}" guardado en SQLite.`)
-    }
+    await loadSnapshots(activeProjectId)
+    setSaveMessage(`Snapshot "${name}" creado.`)
   }
 
-  const saveDesign = async () => {
-    void saveProjectToServer('manual')
+  const openSnapshot = async (snapshotId: string) => {
+    const response = await fetch(`/api/projects/${activeProjectId}/snapshots/${snapshotId}`)
+    if (!response.ok) {
+      setSaveMessage('No se pudo abrir el snapshot.')
+      return
+    }
+
+    const payload = (await response.json()) as {
+      snapshot: { id: string; name: string; payload: PersistedDesign; settings: ProjectSettings | null }
+    }
+
+    const saved = normalizeImportedDesign(payload.snapshot.payload)
+    if (!saved) {
+      setSaveMessage('El snapshot guardado no tiene un formato valido.')
+      return
+    }
+
+    skipHistoryRef.current = true
+    skipAutosaveRef.current = true
+    applyDesign(saved)
+    syncJsonEditorFromDesign(saved)
+    applyProjectSettings(payload.snapshot.settings)
+    clearSelection()
+    setTool('select')
+    setHistory([])
+    setFuture([])
+    syncCurrentDesignSnapshot(saved)
+    setAutosaveState('idle')
+    setSaveMessage(`Snapshot "${payload.snapshot.name}" cargado.`)
   }
 
   const loadSavedDesign = async () => {
@@ -845,17 +898,21 @@ function App() {
       return
     }
 
-    const saved = payload.project.payload
+    const saved = normalizeImportedDesign(payload.project.payload)
+    if (!saved) {
+      setSaveMessage('El diseño guardado no tiene un formato valido.')
+      return
+    }
     skipHistoryRef.current = true
     skipAutosaveRef.current = true
     applyDesign(saved)
+    syncJsonEditorFromDesign(saved)
     applyProjectSettings(payload.project.settings)
-    setSelected(null)
+    clearSelection()
     setTool('select')
     setHistory([])
     setFuture([])
-    lastDesignRef.current = cloneDesign(saved)
-    lastSnapshotRef.current = serializeForHistory(saved)
+    syncCurrentDesignSnapshot(saved)
     setActiveProjectName(payload.project.name)
     setAutosaveState('idle')
     setSaveMessage(`Proyecto "${payload.project.name}" cargado desde SQLite.`)
@@ -908,13 +965,12 @@ function App() {
     }
     skipHistoryRef.current = true
     applyDesign(emptyDesign)
-    setSelected(null)
+    syncJsonEditorFromDesign(emptyDesign)
+    clearSelection()
     setTool('draw-room')
     setHistory([])
     setFuture([])
-    lastDesignRef.current = cloneDesign(emptyDesign)
-    currentDesignRef.current = cloneDesign(emptyDesign)
-    lastSnapshotRef.current = serializeForHistory(emptyDesign)
+    syncCurrentDesignSnapshot(emptyDesign)
     applyProjectSettings(defaultProjectSettings)
     setAutosaveState('idle')
     setSaveMessage(`Proyecto "${payload.project.name}" creado.`)
@@ -990,57 +1046,6 @@ function App() {
     setSaveMessage(`Proyecto renombrado a "${payload.project.name}".`)
   }
 
-  const openProject = async (projectId: string) => {
-    const response = await fetch(`/api/projects/${projectId}`)
-    if (!response.ok) {
-      setSaveMessage('No se pudo abrir el proyecto.')
-      return
-    }
-
-    const payload = (await response.json()) as {
-      project: { id: string; name: string; payload: PersistedDesign | null; settings: ProjectSettings | null }
-    }
-
-    setActiveProjectId(payload.project.id)
-    setActiveProjectName(payload.project.name)
-    setSelected(null)
-    setTool('select')
-    setHistory([])
-    setFuture([])
-    skipAutosaveRef.current = true
-
-    if (payload.project.payload) {
-      skipHistoryRef.current = true
-      applyDesign(payload.project.payload)
-      applyProjectSettings(payload.project.settings)
-      lastDesignRef.current = cloneDesign(payload.project.payload)
-      currentDesignRef.current = cloneDesign(payload.project.payload)
-      lastSnapshotRef.current = serializeForHistory(payload.project.payload)
-      setAutosaveState('idle')
-      setSaveMessage(`Proyecto "${payload.project.name}" abierto.`)
-    } else {
-      const clean = createDefaultDesign()
-      const emptyDesign = {
-        ...clean,
-        roomPoints: [],
-        freeWalls: [],
-        doors: [],
-        surfaces: [],
-        stairs: [],
-        isRoomClosed: false,
-      }
-      skipHistoryRef.current = true
-      applyDesign(emptyDesign)
-      applyProjectSettings(payload.project.settings ?? defaultProjectSettings)
-      setTool('draw-room')
-      lastDesignRef.current = cloneDesign(emptyDesign)
-      currentDesignRef.current = cloneDesign(emptyDesign)
-      lastSnapshotRef.current = serializeForHistory(emptyDesign)
-      setAutosaveState('idle')
-      setSaveMessage(`Proyecto "${payload.project.name}" abierto sin diseño aún.`)
-    }
-  }
-
   const deleteActiveProject = async () => {
     if (activeProjectId === 'default') {
       setSaveMessage('El proyecto principal no se puede borrar.')
@@ -1071,16 +1076,20 @@ function App() {
     const reader = new FileReader()
     reader.onload = () => {
       try {
-        const saved = JSON.parse(String(reader.result)) as PersistedDesign
+        const saved = normalizeImportedDesign(JSON.parse(String(reader.result)))
+        if (!saved) {
+          setSaveMessage('El archivo JSON no tiene un formato compatible.')
+          return
+        }
         skipHistoryRef.current = true
         skipAutosaveRef.current = true
         applyDesign(saved)
-        setSelected(null)
+        syncJsonEditorFromDesign(saved)
+        clearSelection()
         setTool('select')
         setHistory([])
         setFuture([])
-        lastDesignRef.current = cloneDesign(saved)
-        lastSnapshotRef.current = serializeForHistory(saved)
+        syncCurrentDesignSnapshot(saved)
         setAutosaveState('idle')
         setSaveMessage(`JSON importado: ${file.name}`)
       } catch {
@@ -1107,17 +1116,16 @@ function App() {
     setSurfaces([])
     setStairs([])
     setIsRoomClosed(false)
-    setSelected(null)
+    clearSelection()
     setDraftWallStart(null)
     setTool('draw-room')
     skipAutosaveRef.current = true
     applyProjectSettings(defaultProjectSettings)
     setSceneStyle(clean.sceneStyle)
+    syncJsonEditorFromDesign(emptyDesign)
     setHistory([])
     setFuture([])
-    lastDesignRef.current = cloneDesign(emptyDesign)
-    currentDesignRef.current = cloneDesign(emptyDesign)
-    lastSnapshotRef.current = serializeForHistory(lastDesignRef.current)
+    syncCurrentDesignSnapshot(emptyDesign)
     setAutosaveState('idle')
     setSaveMessage('Lienzo reiniciado.')
   }
@@ -1130,18 +1138,58 @@ function App() {
     setSurfaces(sample.surfaces)
     setStairs(sample.stairs)
     setIsRoomClosed(sample.isRoomClosed)
-    setSelected({ type: 'door', id: sample.doors[0].id })
+    selectEntity({ type: 'door', id: sample.doors[0].id })
     setDraftWallStart(null)
     setTool('select')
     skipAutosaveRef.current = true
     applyProjectSettings(defaultProjectSettings)
     setSceneStyle(sample.sceneStyle)
+    syncJsonEditorFromDesign(sample)
     setHistory([])
     setFuture([])
-    lastDesignRef.current = cloneDesign(sample)
-    lastSnapshotRef.current = serializeForHistory(sample)
+    syncCurrentDesignSnapshot(sample)
     setAutosaveState('idle')
     setSaveMessage('Ejemplo cargado.')
+  }
+
+  const applyJsonEditor = () => {
+    if (jsonInspection.errors.length > 0 || !jsonInspection.normalized) {
+      setJsonEditorError(jsonInspection.errors[0] ?? 'El JSON no tiene un formato compatible con el editor.')
+      return
+    }
+
+    skipHistoryRef.current = true
+    skipAutosaveRef.current = true
+    applyDesign(jsonInspection.normalized)
+    syncJsonEditorFromDesign(jsonInspection.normalized)
+    clearSelection()
+    setTool('select')
+    setHistory([])
+    setFuture([])
+    syncCurrentDesignSnapshot(jsonInspection.normalized)
+    setAutosaveState('idle')
+    setJsonEditorError('')
+    setSaveMessage(
+      jsonInspection.warnings.length > 0 ? 'JSON aplicado con ajustes de normalizacion.' : 'JSON aplicado al plano.',
+    )
+  }
+
+  const zoomView = (factor: number) => {
+    const nextWidth = clamp(viewBox.width * factor, minViewWidth, maxViewWidth)
+    const nextHeight = (nextWidth / svgWidth) * svgHeight
+    const centerX = viewBox.x + viewBox.width / 2
+    const centerY = viewBox.y + viewBox.height / 2
+
+    setViewBox({
+      x: centerX - nextWidth / 2,
+      y: centerY - nextHeight / 2,
+      width: nextWidth,
+      height: nextHeight,
+    })
+  }
+
+  const resetNavigation = () => {
+    setViewBox(defaultProjectSettings.planViewBox)
   }
 
   const handleWheel = (event: WheelEvent<SVGSVGElement>) => {
@@ -1170,7 +1218,8 @@ function App() {
       const bounds = event.currentTarget.getBoundingClientRect()
       const pointer = pointToViewBox(event, viewBox, bounds)
       beginGestureHistory()
-      setDragDraft({ type: 'surface', start: pointer.meters, current: pointer.meters })
+      const snapped = snapPoint(pointer.meters, event.ctrlKey || event.metaKey)
+      setDragDraft({ type: 'surface', start: snapped, current: snapped })
       return
     }
 
@@ -1178,13 +1227,15 @@ function App() {
       const bounds = event.currentTarget.getBoundingClientRect()
       const pointer = pointToViewBox(event, viewBox, bounds)
       beginGestureHistory()
-      setDragDraft({ type: 'stairs', start: pointer.meters, current: pointer.meters })
+      const snapped = snapPoint(pointer.meters, event.ctrlKey || event.metaKey)
+      setDragDraft({ type: 'stairs', start: snapped, current: snapped })
     }
   }
 
   const handleCanvasPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect()
     const pointer = pointToViewBox(event, viewBox, bounds)
+    const snapActive = event.ctrlKey || event.metaKey
 
     if (interaction?.type === 'pan') {
       const dx = pointer.meters.x - interaction.originPointer.x
@@ -1198,53 +1249,92 @@ function App() {
     }
 
     if (interaction?.type === 'room-point') {
-      setRoomPoints((current) => current.map((point) => (point.id === interaction.pointId ? { ...point, ...pointer.meters } : point)))
+      const snapped = snapPoint(pointer.meters, snapActive)
+      setRoomPoints((current) => current.map((point) => (point.id === interaction.pointId ? { ...point, ...snapped } : point)))
       return
     }
 
     if (interaction?.type === 'free-wall-start') {
-      setFreeWalls((current) => current.map((wall) => (wall.id === interaction.wallId ? { ...wall, start: { ...wall.start, ...pointer.meters } } : wall)))
+      const snapped = snapPoint(pointer.meters, snapActive, [`wall:${interaction.wallId}`])
+      setFreeWalls((current) => current.map((wall) => (wall.id === interaction.wallId ? { ...wall, start: { ...wall.start, ...snapped } } : wall)))
       return
     }
 
     if (interaction?.type === 'free-wall-end') {
-      setFreeWalls((current) => current.map((wall) => (wall.id === interaction.wallId ? { ...wall, end: { ...wall.end, ...pointer.meters } } : wall)))
+      const snapped = snapPoint(pointer.meters, snapActive, [`wall:${interaction.wallId}`])
+      setFreeWalls((current) => current.map((wall) => (wall.id === interaction.wallId ? { ...wall, end: { ...wall.end, ...snapped } } : wall)))
       return
     }
 
     if (interaction?.type === 'free-wall-move') {
-      const dx = pointer.meters.x - interaction.originPointer.x
-      const dy = pointer.meters.y - interaction.originPointer.y
-      setFreeWalls((current) =>
-        current.map((wall) =>
-          wall.id === interaction.wallId
-            ? {
-                ...wall,
-                start: { ...wall.start, x: roundToGrid(interaction.originStart.x + dx), y: roundToGrid(interaction.originStart.y + dy) },
-                end: { ...wall.end, x: roundToGrid(interaction.originEnd.x + dx), y: roundToGrid(interaction.originEnd.y + dy) },
-              }
-            : wall,
-        ),
-      )
+      const anchor = interaction.members.find((member) => member.type === 'wall')
+      let dx = pointer.meters.x - interaction.originPointer.x
+      let dy = pointer.meters.y - interaction.originPointer.y
+
+      if (anchor?.type === 'wall') {
+        const snapped = snapPoint(
+          {
+            x: anchor.originStart.x + dx,
+            y: anchor.originStart.y + dy,
+          },
+          snapActive,
+          interaction.members.map((member) => `${member.type}:${member.id}` as EntityKey),
+        )
+        dx = snapped.x - anchor.originStart.x
+        dy = snapped.y - anchor.originStart.y
+      }
+
+      applyGroupMove(interaction.members, dx, dy)
       return
     }
 
     if (interaction?.type === 'surface-move') {
-      const dx = pointer.meters.x - interaction.originPointer.x
-      const dy = pointer.meters.y - interaction.originPointer.y
-      setSurfaces((current) => current.map((surface) => (surface.id === interaction.id ? { ...surface, x: roundToGrid(interaction.originX + dx), y: roundToGrid(interaction.originY + dy) } : surface)))
+      const anchor = interaction.members.find((member) => member.type === 'surface')
+      let dx = pointer.meters.x - interaction.originPointer.x
+      let dy = pointer.meters.y - interaction.originPointer.y
+
+      if (anchor?.type === 'surface') {
+        const snapped = snapPoint(
+          {
+            x: anchor.originX + dx,
+            y: anchor.originY + dy,
+          },
+          snapActive,
+          interaction.members.map((member) => `${member.type}:${member.id}` as EntityKey),
+        )
+        dx = snapped.x - anchor.originX
+        dy = snapped.y - anchor.originY
+      }
+
+      applyGroupMove(interaction.members, dx, dy)
       return
     }
 
     if (interaction?.type === 'stairs-move') {
-      const dx = pointer.meters.x - interaction.originPointer.x
-      const dy = pointer.meters.y - interaction.originPointer.y
-      setStairs((current) => current.map((stair) => (stair.id === interaction.id ? { ...stair, x: roundToGrid(interaction.originX + dx), y: roundToGrid(interaction.originY + dy) } : stair)))
+      const anchor = interaction.members.find((member) => member.type === 'stairs')
+      let dx = pointer.meters.x - interaction.originPointer.x
+      let dy = pointer.meters.y - interaction.originPointer.y
+
+      if (anchor?.type === 'stairs') {
+        const snapped = snapPoint(
+          {
+            x: anchor.originX + dx,
+            y: anchor.originY + dy,
+          },
+          snapActive,
+          interaction.members.map((member) => `${member.type}:${member.id}` as EntityKey),
+        )
+        dx = snapped.x - anchor.originX
+        dy = snapped.y - anchor.originY
+      }
+
+      applyGroupMove(interaction.members, dx, dy)
       return
     }
 
     if (dragDraft) {
-      setDragDraft((current) => (current ? { ...current, current: pointer.meters } : current))
+      const snapped = snapPoint(pointer.meters, snapActive)
+      setDragDraft((current) => (current ? { ...current, current: snapped } : current))
     }
   }
 
@@ -1255,22 +1345,28 @@ function App() {
 
     const bounds = event.currentTarget.getBoundingClientRect()
     const pointer = pointToViewBox(event, viewBox, bounds)
+    const snapped = snapPoint(pointer.meters, event.ctrlKey || event.metaKey)
 
     if (tool === 'draw-room' && !isRoomClosed) {
-      setRoomPoints((current) => [...current, { id: uid('rp'), ...pointer.meters }])
+      setRoomPoints((current) => [...current, { id: uid('rp'), ...snapped }])
       return
     }
 
     if (tool === 'wall') {
       if (!draftWallStart) {
-        setDraftWallStart({ id: uid('fw-start'), ...pointer.meters })
+        setDraftWallStart({ id: uid('fw-start'), ...snapped })
         return
       }
 
-      const wall: WallSegment = { id: uid('fw'), start: draftWallStart, end: { id: uid('fw-end'), ...pointer.meters }, color: '#d8c3b0' }
+      const wall: WallSegment = { id: uid('fw'), start: draftWallStart, end: { id: uid('fw-end'), ...snapped }, color: '#d8c3b0' }
       setFreeWalls((current) => [...current, wall])
-      setSelected({ type: 'wall', id: wall.id })
+      selectEntity({ type: 'wall', id: wall.id })
       setDraftWallStart(null)
+      return
+    }
+
+    if (tool === 'select') {
+      clearSelection()
     }
   }
 
@@ -1284,7 +1380,7 @@ function App() {
   const createDoor = (wall: WallDescriptor) => {
     const door = clampDoorToWall({ id: uid('d'), wallId: wall.id, offset: wall.length / 2, width: Math.min(0.9, Math.max(0.7, roundToGrid(wall.length * 0.25))), color: '#c5672f' }, wall)
     setDoors((current) => [...current.filter((item) => item.wallId !== wall.id), door])
-    setSelected({ type: 'door', id: door.id })
+    selectEntity({ type: 'door', id: door.id })
     setTool('select')
   }
 
@@ -1337,151 +1433,270 @@ function App() {
     setFreeWalls((current) => current.map((wall) => (wall.id === selectedWall.id ? { ...wall, ...changes } : wall)))
   }
 
-  const deleteSelected = () => {
-    if (!selected) {
-      return
-    }
-
-    if (selected.type === 'door') {
-      setDoors((current) => current.filter((door) => door.id !== selected.id))
-    }
-    if (selected.type === 'surface') {
-      setSurfaces((current) => current.filter((surface) => surface.id !== selected.id))
-    }
-    if (selected.type === 'stairs') {
-      setStairs((current) => current.filter((stair) => stair.id !== selected.id))
-    }
-    if (selected.type === 'wall') {
-      setFreeWalls((current) => current.filter((wall) => wall.id !== selected.id))
-      setDoors((current) => current.filter((door) => door.wallId !== `free-${selected.id}`))
-    }
-
-    setSelected(null)
-  }
-
   const roomPolygon = roomPoints.map((point) => `${metersToSvg(point.x)},${metersToSvg(point.y)}`).join(' ')
   const draftRect = dragDraft ? normalizeRect(dragDraft.start, dragDraft.current) : null
+  const viewZoomPercent = Math.round((svgWidth / viewBox.width) * 100)
+  const ribbonSummary =
+    activeTopMenu === 'project'
+      ? activeProjectName
+      : activeTopMenu === 'view'
+        ? `${viewMode === '2d' ? 'Planta 2D' : 'Volumen 3D'} · zoom ${viewZoomPercent}%`
+        : activeTopMenu === 'tools'
+          ? `Herramienta ${tool}`
+          : activeTopMenu === 'save'
+            ? `Autosave ${autosaveState}`
+            : `Muros ${wallHeight.toFixed(2)} m / ${wallThickness.toFixed(2)} m`
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="panel">
-          <p className="eyebrow">Palencia 30</p>
-          <h1>Editor arquitectonico 2D/3D</h1>
-          <p className="lede">Guarda el diseño, edita elementos existentes y ajusta colores de muros, suelos, superficies, escaleras y puertas.</p>
-        </div>
-
-        <div className="panel">
-          <span className="section-label">Proyecto</span>
-          <label>
-            Activo
-            <select onChange={(event) => void openProject(event.target.value)} value={activeProjectId}>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="button-stack">
-            <button onClick={() => void createProject()} type="button">Nuevo proyecto</button>
-            <button onClick={() => void renameProject()} type="button">Renombrar</button>
-            <button onClick={() => void duplicateProject()} type="button">Duplicar</button>
-            <button className="danger" disabled={activeProjectId === 'default'} onClick={() => void deleteActiveProject()} type="button">Borrar proyecto</button>
+      <nav className="cad-shell">
+        <div className="cad-titlebar">
+          <div className="cad-appbutton">P30</div>
+          <div className="cad-titlemeta">
+            <strong>Palencia 30</strong>
+            <span>{ribbonSummary}</span>
           </div>
-          <p className="detail-text">{activeProjectName}</p>
-          <div className="project-list">
-            {projects.map((project) => (
-              <button
-                className={`project-card ${project.id === activeProjectId ? 'project-card--active' : ''}`}
-                key={project.id}
-                onClick={() => void openProject(project.id)}
-                type="button"
-              >
-                {project.preview ? <img alt={project.name} className="project-preview" src={project.preview} /> : <div className="project-preview project-preview--empty">Sin preview</div>}
-                <span className="project-name">{project.name}</span>
-              </button>
-            ))}
+          <div className="cad-quicktools">
+            <button className="cad-quickbutton" disabled={history.length === 0} onClick={undo} type="button">Undo</button>
+            <button className="cad-quickbutton" disabled={future.length === 0} onClick={redo} type="button">Redo</button>
+            <button className="cad-quickbutton" onClick={saveDesign} type="button">Guardar</button>
+            <button className="cad-quickbutton" onClick={loadSample} type="button">Ejemplo</button>
           </div>
         </div>
 
-        <div className="panel">
-          <span className="section-label">Vista</span>
-          <div className="segmented">
-            <button className={viewMode === '2d' ? 'active' : ''} onClick={() => setViewMode('2d')} type="button">Planta 2D</button>
-            <button className={viewMode === '3d' ? 'active' : ''} onClick={() => setViewMode('3d')} type="button">Volumen 3D</button>
-          </div>
+        <div className="cad-tabs">
+          <button className={`cad-tab ${activeTopMenu === 'project' ? 'cad-tab--active' : ''}`} onClick={() => setActiveTopMenu('project')} type="button">Proyecto</button>
+          <button className={`cad-tab ${activeTopMenu === 'view' ? 'cad-tab--active' : ''}`} onClick={() => setActiveTopMenu('view')} type="button">Vista</button>
+          <button className={`cad-tab ${activeTopMenu === 'tools' ? 'cad-tab--active' : ''}`} onClick={() => setActiveTopMenu('tools')} type="button">Dibujo</button>
+          <button className={`cad-tab ${activeTopMenu === 'save' ? 'cad-tab--active' : ''}`} onClick={() => setActiveTopMenu('save')} type="button">Datos</button>
+          <button className={`cad-tab ${activeTopMenu === 'scene' ? 'cad-tab--active' : ''}`} onClick={() => setActiveTopMenu('scene')} type="button">Escena</button>
         </div>
 
-        <div className="panel">
-          <span className="section-label">Herramientas</span>
-          <div className="tool-grid">
-            <button className={tool === 'select' ? 'active' : ''} onClick={() => setTool('select')} type="button">Seleccionar</button>
-            <button className={tool === 'pan' ? 'active' : ''} onClick={() => setTool('pan')} type="button">Pan</button>
-            <button className={tool === 'draw-room' ? 'active' : ''} onClick={() => { if (isRoomClosed) { setRoomPoints([]); setIsRoomClosed(false) } setTool('draw-room') }} type="button">Estancia</button>
-            <button className={tool === 'wall' ? 'active' : ''} onClick={() => setTool('wall')} type="button">Muro libre</button>
-            <button className={tool === 'door' ? 'active' : ''} onClick={() => setTool('door')} type="button">Puerta</button>
-            <button className={tool === 'surface' ? 'active' : ''} onClick={() => setTool('surface')} type="button">Superficie</button>
-            <button className={tool === 'stairs' ? 'active' : ''} onClick={() => setTool('stairs')} type="button">Escalera</button>
-          </div>
-          <div className="button-stack">
-            <button onClick={resetScene} type="button">Nuevo lienzo</button>
-            <button disabled={roomPoints.length < 3 || isRoomClosed} onClick={handleCloseRoom} type="button">Cerrar estancia</button>
-            <button onClick={loadSample} type="button">Cargar ejemplo</button>
-          </div>
-        </div>
+        <div className="cad-ribbon">
+          {activeTopMenu === 'project' ? (
+            <div className="cad-ribbon-panel">
+              <section className="cad-group cad-group--wide">
+                <span className="section-label">Proyecto activo</span>
+                <label>
+                  Activo
+                  <select onChange={(event) => void openProject(event.target.value)} value={activeProjectId}>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="button-stack">
+                  <button onClick={() => void createProject()} type="button">Nuevo proyecto</button>
+                  <button onClick={() => void renameProject()} type="button">Renombrar</button>
+                  <button onClick={() => void duplicateProject()} type="button">Duplicar</button>
+                  <button className="danger" disabled={activeProjectId === 'default'} onClick={() => void deleteActiveProject()} type="button">Borrar</button>
+                </div>
+              </section>
 
-        <div className="panel">
-          <span className="section-label">Guardar</span>
-          <div className="button-stack">
-            <button disabled={history.length === 0} onClick={undo} type="button">Undo</button>
-            <button disabled={future.length === 0} onClick={redo} type="button">Redo</button>
-            <button className="danger" disabled={!selected} onClick={deleteSelected} type="button">Borrar seleccionado</button>
-          </div>
-          <div className="button-stack">
-            <button onClick={saveDesign} type="button">Guardar diseño</button>
-            <button onClick={loadSavedDesign} type="button">Cargar guardado</button>
-            <button onClick={downloadDesign} type="button">Descargar JSON</button>
-            <button onClick={() => importInputRef.current?.click()} type="button">Importar JSON</button>
-          </div>
-          <input accept="application/json" className="hidden-input" onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file) {
-              importDesignFile(file)
-            }
-            event.currentTarget.value = ''
-          }} ref={importInputRef} type="file" />
-          <p className="detail-text autosave-text">Autosave: {autosaveState}</p>
-          {saveMessage ? <p className="detail-text save-message">{saveMessage}</p> : null}
-        </div>
+              <section className="cad-group cad-group--wide">
+                <span className="section-label">Proyectos</span>
+                <div className="project-list">
+                  {projects.map((project) => (
+                    <button
+                      className={`project-card ${project.id === activeProjectId ? 'project-card--active' : ''}`}
+                      key={project.id}
+                      onClick={() => void openProject(project.id)}
+                      type="button"
+                    >
+                      {project.preview ? <img alt={project.name} className="project-preview" src={project.preview} /> : <div className="project-preview project-preview--empty">Sin preview</div>}
+                      <span className="project-name">{project.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
 
-        <div className="panel">
-          <span className="section-label">Escena</span>
-          <label>
-            Altura de muros
-            <div className="inline-field">
-              <input max="4.5" min="2.2" onChange={(event) => setWallHeight(Number(event.target.value))} step="0.1" type="range" value={wallHeight} />
-              <strong>{wallHeight.toFixed(2)} m</strong>
+              <section className="cad-group cad-group--wide">
+                <span className="section-label">Snapshots</span>
+                <div className="button-stack">
+                  <button onClick={() => void createSnapshot()} type="button">Crear snapshot</button>
+                </div>
+                <div className="snapshot-list">
+                  {snapshots.length === 0 ? <p className="detail-text">Sin snapshots para este proyecto.</p> : null}
+                  {snapshots.map((snapshot) => (
+                    <button className="snapshot-card" key={snapshot.id} onClick={() => void openSnapshot(snapshot.id)} type="button">
+                      {snapshot.preview ? <img alt={snapshot.name} className="project-preview" src={snapshot.preview} /> : <div className="project-preview project-preview--empty">Sin preview</div>}
+                      <span className="project-name">{snapshot.name}</span>
+                      <span className="snapshot-date">{new Date(snapshot.created_at).toLocaleString('es-ES')}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
             </div>
-          </label>
-          <label>
-            Grosor de muros
-            <div className="inline-field">
-              <input max="0.4" min="0.1" onChange={(event) => setWallThickness(Number(event.target.value))} step="0.01" type="range" value={wallThickness} />
-              <strong>{wallThickness.toFixed(2)} m</strong>
-            </div>
-          </label>
-          <label>
-            Color muros de estancia
-            <input onChange={(event) => setSceneStyle((current) => ({ ...current, roomWallColor: event.target.value }))} type="color" value={sceneStyle.roomWallColor} />
-          </label>
-          <label>
-            Color suelo principal
-            <input onChange={(event) => setSceneStyle((current) => ({ ...current, floorColor: event.target.value, roomFillColor: event.target.value }))} type="color" value={sceneStyle.floorColor} />
-          </label>
-        </div>
+          ) : null}
 
-      </aside>
+          {activeTopMenu === 'view' ? (
+            <div className="cad-ribbon-panel">
+              <section className="cad-group">
+                <span className="section-label">Vista</span>
+                <div className="segmented">
+                  <button className={viewMode === '2d' ? 'active' : ''} onClick={() => setViewMode('2d')} type="button">Planta 2D</button>
+                  <button className={viewMode === '3d' ? 'active' : ''} onClick={() => setViewMode('3d')} type="button">Volumen 3D</button>
+                </div>
+              </section>
+
+              <section className="cad-group">
+                <span className="section-label">Navegacion</span>
+                <div className="button-stack">
+                  <button onClick={() => zoomView(0.85)} type="button">Zoom +</button>
+                  <button onClick={() => zoomView(1.15)} type="button">Zoom -</button>
+                  <button onClick={resetNavigation} type="button">Reencuadrar</button>
+                </div>
+                <p className="detail-text cad-mono">Zoom {viewZoomPercent}% · X {Math.round(viewBox.x)} · Y {Math.round(viewBox.y)}</p>
+              </section>
+            </div>
+          ) : null}
+
+          {activeTopMenu === 'tools' ? (
+            <div className="cad-ribbon-panel">
+              <section className="cad-group">
+                <span className="section-label">Herramientas</span>
+                <div className="tool-grid">
+                  <button className={tool === 'select' ? 'active' : ''} onClick={() => setTool('select')} type="button">Seleccionar</button>
+                  <button className={tool === 'pan' ? 'active' : ''} onClick={() => setTool('pan')} type="button">Pan</button>
+                  <button className={tool === 'draw-room' ? 'active' : ''} onClick={() => { if (isRoomClosed) { setRoomPoints([]); setIsRoomClosed(false) } setTool('draw-room') }} type="button">Estancia</button>
+                  <button className={tool === 'wall' ? 'active' : ''} onClick={() => setTool('wall')} type="button">Muro libre</button>
+                  <button className={tool === 'door' ? 'active' : ''} onClick={() => setTool('door')} type="button">Puerta</button>
+                  <button className={tool === 'surface' ? 'active' : ''} onClick={() => setTool('surface')} type="button">Superficie</button>
+                  <button className={tool === 'stairs' ? 'active' : ''} onClick={() => setTool('stairs')} type="button">Escalera</button>
+                </div>
+              </section>
+
+              <section className="cad-group">
+                <span className="section-label">Edicion</span>
+                <div className="button-stack">
+                  <button onClick={resetScene} type="button">Nuevo lienzo</button>
+                  <button disabled={roomPoints.length < 3 || isRoomClosed} onClick={handleCloseRoom} type="button">Cerrar estancia</button>
+                  <button disabled={selectedGroupableKeys.length < 2} onClick={groupSelected} type="button">Agrupar</button>
+                  <button disabled={selectedGroups.length === 0} onClick={ungroupSelected} type="button">Desagrupar</button>
+                </div>
+              </section>
+            </div>
+          ) : null}
+
+          {activeTopMenu === 'save' ? (
+            <div className="cad-ribbon-panel cad-ribbon-panel--data">
+              <section className="cad-group">
+                <span className="section-label">Persistencia</span>
+                <div className="button-stack">
+                  <button onClick={saveDesign} type="button">Guardar diseño</button>
+                  <button onClick={loadSavedDesign} type="button">Cargar guardado</button>
+                  <button onClick={downloadDesign} type="button">Descargar JSON</button>
+                  <button onClick={() => importInputRef.current?.click()} type="button">Importar JSON</button>
+                </div>
+                <div className="button-stack">
+                  <button className="danger" disabled={selectedEntityKeys.length === 0} onClick={deleteSelected} type="button">Borrar seleccionado</button>
+                </div>
+                <p className="detail-text autosave-text">Autosave: {autosaveState}</p>
+                <p className="detail-text">Ctrl/Cmd + click para multiseleccion. Ctrl/Cmd al mover o dibujar para enganchar.</p>
+                {saveMessage ? <p className="detail-text save-message">{saveMessage}</p> : null}
+              </section>
+
+              <section className="cad-group cad-group--wide cad-group--json">
+                <input accept="application/json" className="hidden-input" onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) {
+                    importDesignFile(file)
+                  }
+                  event.currentTarget.value = ''
+                }} ref={importInputRef} type="file" />
+                <div className="json-editor">
+                  <div className="json-editor-header">
+                    <span className="section-label">Editor JSON</span>
+                    <div className="button-stack json-editor-actions">
+                      <button onClick={() => syncJsonEditorFromDesign(persistableDesign)} type="button">Volcar actual</button>
+                      <button onClick={() => {
+                        try {
+                          const formatted = JSON.stringify(JSON.parse(jsonEditorText), null, 2)
+                          setJsonEditorText(formatted)
+                          setJsonEditorError('')
+                        } catch {
+                          setJsonEditorError('No se puede formatear un JSON invalido.')
+                        }
+                      }} type="button">Formatear</button>
+                      <button disabled={jsonInspection.errors.length > 0 || !jsonInspection.normalized} onClick={applyJsonEditor} type="button">Aplicar JSON</button>
+                    </div>
+                  </div>
+                  <textarea
+                    onChange={(event) => {
+                      setJsonEditorText(event.target.value)
+                      if (jsonEditorError) {
+                        setJsonEditorError('')
+                      }
+                    }}
+                    spellCheck={false}
+                    value={jsonEditorText}
+                  />
+                  <div className="json-editor-status">
+                    <p className="detail-text json-editor-summary">
+                      {jsonInspection.errors.length > 0
+                        ? `Errores: ${jsonInspection.errors.length}`
+                        : jsonInspection.warnings.length > 0
+                          ? `Listo para aplicar con ${jsonInspection.warnings.length} ajustes`
+                          : 'Listo para aplicar sin cambios forzados'}
+                    </p>
+                    {jsonInspection.errors.length > 0 ? (
+                      <ul className="json-editor-list json-editor-list--error">
+                        {jsonInspection.errors.map((issue) => (
+                          <li key={issue}>{issue}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {jsonInspection.warnings.length > 0 ? (
+                      <ul className="json-editor-list json-editor-list--warning">
+                        {jsonInspection.warnings.map((issue) => (
+                          <li key={issue}>{issue}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                  {jsonEditorError ? <p className="detail-text json-editor-error">{jsonEditorError}</p> : null}
+                </div>
+              </section>
+            </div>
+          ) : null}
+
+          {activeTopMenu === 'scene' ? (
+            <div className="cad-ribbon-panel">
+              <section className="cad-group">
+                <span className="section-label">Escena</span>
+                <label>
+                  Altura de muros
+                  <div className="inline-field">
+                    <input max="4.5" min="2.2" onChange={(event) => setWallHeight(Number(event.target.value))} step="0.1" type="range" value={wallHeight} />
+                    <strong>{wallHeight.toFixed(2)} m</strong>
+                  </div>
+                </label>
+                <label>
+                  Grosor de muros
+                  <div className="inline-field">
+                    <input max="0.4" min="0.1" onChange={(event) => setWallThickness(Number(event.target.value))} step="0.01" type="range" value={wallThickness} />
+                    <strong>{wallThickness.toFixed(2)} m</strong>
+                  </div>
+                </label>
+              </section>
+
+              <section className="cad-group">
+                <span className="section-label">Material</span>
+                <label>
+                  Color muros de estancia
+                  <input onChange={(event) => setSceneStyle((current) => ({ ...current, roomWallColor: event.target.value }))} type="color" value={sceneStyle.roomWallColor} />
+                </label>
+                <label>
+                  Color suelo principal
+                  <input onChange={(event) => setSceneStyle((current) => ({ ...current, floorColor: event.target.value, roomFillColor: event.target.value }))} type="color" value={sceneStyle.floorColor} />
+                </label>
+              </section>
+            </div>
+          ) : null}
+        </div>
+      </nav>
 
       <main className="workspace">
         <div className="workspace-header">
@@ -1489,11 +1704,21 @@ function App() {
             <h2>{viewMode === '2d' ? 'Plano editable' : 'Modelo 3D'}</h2>
             <p>{viewMode === '2d' ? 'Rueda para zoom. Boton central o herramienta Pan para mover la vista. Arrastra muros libres, superficies y escaleras para recolocarlos.' : 'La vista 3D refleja el mismo diseño guardable y los colores configurados.'}</p>
           </div>
-          <div className="stats">
-            <span>{roomPoints.length} vertices</span>
-            <span>{allWalls.length} muros</span>
-            <span>{surfaces.length} superficies</span>
-            <span>{stairs.length} escaleras</span>
+          <div className="workspace-header-side">
+            <div className="stats">
+              <span>{roomPoints.length} vertices</span>
+              <span>{allWalls.length} muros</span>
+              <span>{surfaces.length} superficies</span>
+              <span>{stairs.length} escaleras</span>
+            </div>
+            {viewMode === '2d' ? (
+              <div className="nav-dock">
+                <button onClick={() => zoomView(0.85)} type="button">+</button>
+                <button onClick={() => zoomView(1.15)} type="button">-</button>
+                <button onClick={resetNavigation} type="button">Home</button>
+                <span className="cad-mono">{viewZoomPercent}%</span>
+              </div>
+            ) : null}
           </div>
         </div>
         <div className={`properties-float ${propertiesOpen ? 'properties-float--open' : ''}`}>
@@ -1552,7 +1777,7 @@ function App() {
                   <button className="danger" onClick={deleteSelected} type="button">Eliminar escalera</button>
                 </>
               ) : null}
-              {!selected ? <p className="detail-text">Selecciona un muro libre, puerta, superficie o escalera. Los muros libres, superficies y escaleras se pueden arrastrar en planta.</p> : null}
+              {selectedEntityKeys.length === 0 ? <p className="detail-text">Selecciona un muro libre, puerta, superficie o escalera. Los muros libres, superficies y escaleras se pueden arrastrar en planta.</p> : null}
             </div>
           ) : null}
         </div>
@@ -1574,17 +1799,20 @@ function App() {
               {surfaces.map((surface) => (
                 <g key={surface.id}>
                   <rect
-                    className={`surface-rect ${selected?.type === 'surface' && selected.id === surface.id ? 'surface-rect--selected' : ''}`}
+                    className={`surface-rect ${selectedEntityKeys.includes(`surface:${surface.id}`) ? 'surface-rect--selected' : ''}`}
                     height={metersToSvg(surface.depth)}
-                    onClick={() => setSelected({ type: 'surface', id: surface.id })}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      selectEntity({ type: 'surface', id: surface.id }, event.ctrlKey || event.metaKey)
+                    }}
                     onPointerDown={(event) => {
                       if (tool !== 'select') return
                       event.stopPropagation()
                       const bounds = event.currentTarget.ownerSVGElement!.getBoundingClientRect()
                       const pointer = pointToViewBox(event as unknown as ReactPointerEvent<SVGSVGElement>, viewBox, bounds)
                       beginGestureHistory()
-                      setSelected({ type: 'surface', id: surface.id })
-                      setInteraction({ type: 'surface-move', id: surface.id, originPointer: pointer.meters, originX: surface.x, originY: surface.y })
+                      selectEntity({ type: 'surface', id: surface.id }, event.ctrlKey || event.metaKey)
+                      setInteraction({ type: 'surface-move', entityKey: `surface:${surface.id}`, originPointer: pointer.meters, members: getGroupMoveMembers(`surface:${surface.id}`) })
                     }}
                     style={{ fill: `${surface.color}44`, stroke: surface.color }}
                     width={metersToSvg(surface.width)}
@@ -1605,17 +1833,20 @@ function App() {
                 return (
                   <g key={stair.id}>
                     <rect
-                      className={`stairs-rect ${selected?.type === 'stairs' && selected.id === stair.id ? 'stairs-rect--selected' : ''}`}
+                      className={`stairs-rect ${selectedEntityKeys.includes(`stairs:${stair.id}`) ? 'stairs-rect--selected' : ''}`}
                       height={depth}
-                      onClick={() => setSelected({ type: 'stairs', id: stair.id })}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        selectEntity({ type: 'stairs', id: stair.id }, event.ctrlKey || event.metaKey)
+                      }}
                       onPointerDown={(event) => {
                         if (tool !== 'select') return
                         event.stopPropagation()
                         const bounds = event.currentTarget.ownerSVGElement!.getBoundingClientRect()
                         const pointer = pointToViewBox(event as unknown as ReactPointerEvent<SVGSVGElement>, viewBox, bounds)
                         beginGestureHistory()
-                        setSelected({ type: 'stairs', id: stair.id })
-                        setInteraction({ type: 'stairs-move', id: stair.id, originPointer: pointer.meters, originX: stair.x, originY: stair.y })
+                        selectEntity({ type: 'stairs', id: stair.id }, event.ctrlKey || event.metaKey)
+                        setInteraction({ type: 'stairs-move', entityKey: `stairs:${stair.id}`, originPointer: pointer.meters, members: getGroupMoveMembers(`stairs:${stair.id}`) })
                       }}
                       style={{ fill: `${stair.color}33`, stroke: stair.color }}
                       width={width}
@@ -1638,7 +1869,7 @@ function App() {
               {allWalls.map((wall) => {
                 const start = toCanvas(wall.start)
                 const end = toCanvas(wall.end)
-                const isSelectedWall = selected?.type === 'wall' && selected.id === wall.id.replace('free-', '')
+                const isSelectedWall = selectedEntityKeys.includes(`wall:${wall.id.replace('free-', '')}`)
 
                 return (
                   <g key={wall.id}>
@@ -1650,7 +1881,7 @@ function App() {
                           return
                         }
                         if (wall.kind === 'free') {
-                          setSelected({ type: 'wall', id: wall.id.replace('free-', '') })
+                          selectEntity({ type: 'wall', id: wall.id.replace('free-', '') })
                         }
                       }}
                       onPointerDown={(event) => {
@@ -1661,8 +1892,8 @@ function App() {
                         const rawWall = freeWalls.find((item) => item.id === wall.id.replace('free-', ''))
                         if (!rawWall) return
                         beginGestureHistory()
-                        setSelected({ type: 'wall', id: rawWall.id })
-                        setInteraction({ type: 'free-wall-move', wallId: rawWall.id, originPointer: pointer.meters, originStart: rawWall.start, originEnd: rawWall.end })
+                        selectEntity({ type: 'wall', id: rawWall.id }, event.ctrlKey || event.metaKey)
+                        setInteraction({ type: 'free-wall-move', entityKey: `wall:${rawWall.id}`, originPointer: pointer.meters, members: getGroupMoveMembers(`wall:${rawWall.id}`) })
                       }}
                       style={{ stroke: wall.color }}
                       x1={start.x}
@@ -1690,7 +1921,7 @@ function App() {
                 const endFactor = (door.offset + door.width / 2) / wall.length
                 const start = toCanvas({ x: wall.start.x + wall.dx * startFactor, y: wall.start.y + wall.dy * startFactor })
                 const end = toCanvas({ x: wall.start.x + wall.dx * endFactor, y: wall.start.y + wall.dy * endFactor })
-                return <line className={`door-line ${selected?.type === 'door' && selected.id === door.id ? 'door-line--selected' : ''}`} key={door.id} onClick={() => setSelected({ type: 'door', id: door.id })} style={{ stroke: door.color }} x1={start.x} x2={end.x} y1={start.y} y2={end.y} />
+                return <line className={`door-line ${selectedEntityKeys.includes(`door:${door.id}`) ? 'door-line--selected' : ''}`} key={door.id} onClick={(event) => { event.stopPropagation(); selectEntity({ type: 'door', id: door.id }, event.ctrlKey || event.metaKey) }} style={{ stroke: door.color }} x1={start.x} x2={end.x} y1={start.y} y2={end.y} />
               })}
 
               {roomPoints.map((point) => {
@@ -1708,8 +1939,8 @@ function App() {
                 const end = toCanvas(wall.end)
                 return (
                   <g key={`handles-${wall.id}`}>
-                    <circle className="endpoint-handle" cx={start.x} cy={start.y} onPointerDown={(event) => { if (tool !== 'select') return; event.stopPropagation(); beginGestureHistory(); setSelected({ type: 'wall', id: wall.id }); setInteraction({ type: 'free-wall-start', wallId: wall.id }) }} r="7" />
-                    <circle className="endpoint-handle" cx={end.x} cy={end.y} onPointerDown={(event) => { if (tool !== 'select') return; event.stopPropagation(); beginGestureHistory(); setSelected({ type: 'wall', id: wall.id }); setInteraction({ type: 'free-wall-end', wallId: wall.id }) }} r="7" />
+                    <circle className="endpoint-handle" cx={start.x} cy={start.y} onPointerDown={(event) => { if (tool !== 'select') return; event.stopPropagation(); beginGestureHistory(); selectEntity({ type: 'wall', id: wall.id }, event.ctrlKey || event.metaKey); setInteraction({ type: 'free-wall-start', wallId: wall.id }) }} r="7" />
+                    <circle className="endpoint-handle" cx={end.x} cy={end.y} onPointerDown={(event) => { if (tool !== 'select') return; event.stopPropagation(); beginGestureHistory(); selectEntity({ type: 'wall', id: wall.id }, event.ctrlKey || event.metaKey); setInteraction({ type: 'free-wall-end', wallId: wall.id }) }} r="7" />
                   </g>
                 )
               })}

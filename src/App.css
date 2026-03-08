@@ -99,35 +99,32 @@
 
 .cad-ribbon {
   background: linear-gradient(180deg, #414954 0%, #333a44 100%);
-  min-height: 156px;
+  height: 156px;
 }
 
 .cad-ribbon-panel {
   display: flex;
   gap: 10px;
-  min-height: 156px;
+  height: 156px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding: 10px;
-}
-
-.cad-ribbon-panel--data {
-  min-height: 250px;
 }
 
 .cad-group {
   background: linear-gradient(180deg, #39414a 0%, #30363f 100%);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 8px;
+  flex: 1 1 240px;
+  height: 100%;
   min-width: 220px;
+  overflow: auto;
   padding: 10px;
 }
 
 .cad-group--wide {
+  flex: 1.4 1 340px;
   min-width: 340px;
-}
-
-.cad-group--json {
-  flex: 1 0 520px;
 }
 
 .cad-mono {
@@ -148,13 +145,6 @@
   text-transform: uppercase;
 }
 
-.workspace-header h2 {
-  color: #eef4fa;
-  font-family: 'Segoe UI', Tahoma, sans-serif;
-  margin: 0;
-}
-
-.workspace-header p,
 .detail-text,
 label {
   color: #aab9c9;
@@ -273,7 +263,7 @@ button:hover {
 }
 
 .json-editor {
-  margin-top: 16px;
+  margin-top: 0;
 }
 
 .json-editor-header {
@@ -300,6 +290,10 @@ button:hover {
   padding: 14px;
   resize: vertical;
   width: 100%;
+}
+
+.json-editor--modal textarea {
+  min-height: min(52vh, 560px);
 }
 
 .json-editor-status {
@@ -381,22 +375,6 @@ textarea {
   position: relative;
 }
 
-.workspace-header {
-  align-items: flex-start;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  display: flex;
-  gap: 18px;
-  justify-content: space-between;
-  padding: 12px 14px 10px;
-}
-
-.workspace-header-side {
-  align-items: flex-end;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .stats span {
   background: #303944;
   border-radius: 999px;
@@ -405,26 +383,16 @@ textarea {
   padding: 8px 12px;
 }
 
-.nav-dock {
-  align-items: center;
-  display: flex;
-  gap: 6px;
-}
-
-.nav-dock button {
-  min-width: 42px;
-}
-
 .canvas-card {
   flex: 1;
   overflow: hidden;
-  padding: 10px;
+  padding: 6px;
 }
 
 .properties-float {
+  left: 12px;
   position: absolute;
-  right: 18px;
-  top: 92px;
+  top: 12px;
   width: 320px;
   z-index: 3;
 }
@@ -448,6 +416,186 @@ textarea {
   max-height: calc(100vh - 190px);
   overflow: auto;
   padding: 18px;
+}
+
+.navigation-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  z-index: 2;
+}
+
+.navigation-widget button {
+  pointer-events: auto;
+}
+
+.navigation-compass {
+  align-items: center;
+  background: rgba(57, 65, 74, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  color: #eef4fa;
+  display: flex;
+  height: 112px;
+  justify-content: center;
+  position: relative;
+  width: 112px;
+}
+
+.navigation-compass-center {
+  align-items: center;
+  background: rgba(225, 233, 241, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  color: #eef4fa;
+  display: flex;
+  font-size: 0.72rem;
+  font-weight: 700;
+  height: 34px;
+  justify-content: center;
+  padding: 0;
+  width: 44px;
+}
+
+.navigation-direction {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #dbe6f1;
+  display: inline-flex;
+  font-size: 1.05rem;
+  font-weight: 800;
+  height: 26px;
+  justify-content: center;
+  min-width: 26px;
+  padding: 0;
+  position: absolute;
+}
+
+.navigation-north,
+.navigation-west,
+.navigation-east,
+.navigation-south {
+  position: absolute;
+}
+
+.navigation-north {
+  top: 8px;
+}
+
+.navigation-south {
+  bottom: 8px;
+}
+
+.navigation-west {
+  left: 10px;
+}
+
+.navigation-east {
+  right: 10px;
+}
+
+.navigation-dock {
+  background: rgba(57, 65, 74, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  pointer-events: auto;
+}
+
+.navigation-dock button {
+  min-width: 54px;
+}
+
+.axis-widget {
+  border-left: 2px solid rgba(230, 238, 246, 0.9);
+  border-bottom: 2px solid rgba(230, 238, 246, 0.9);
+  bottom: 34px;
+  height: 54px;
+  left: 20px;
+  position: absolute;
+  width: 54px;
+  z-index: 2;
+}
+
+.axis-widget__x,
+.axis-widget__y {
+  color: #eef4fa;
+  font-size: 0.92rem;
+  position: absolute;
+}
+
+.axis-widget__x {
+  bottom: -2px;
+  right: -14px;
+}
+
+.axis-widget__y {
+  left: -2px;
+  top: -18px;
+}
+
+.workspace-statusbar {
+  align-items: center;
+  background: linear-gradient(180deg, #4d5968 0%, #34404d 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e5edf5;
+  display: flex;
+  gap: 1px;
+  min-height: 28px;
+  overflow-x: auto;
+}
+
+.workspace-statusbar span {
+  background: rgba(17, 22, 27, 0.28);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  flex: 0 0 auto;
+  font-size: 0.77rem;
+  font-weight: 700;
+  min-height: 28px;
+  padding: 6px 10px;
+}
+
+.modal-backdrop {
+  align-items: center;
+  background: rgba(6, 9, 13, 0.68);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
+  z-index: 6;
+}
+
+.modal-panel {
+  background: linear-gradient(180deg, #343d47 0%, #252c33 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 28px 64px rgba(0, 0, 0, 0.45);
+  max-height: min(86vh, 920px);
+  overflow: auto;
+  padding: 18px;
+  width: min(980px, calc(100vw - 48px));
+}
+
+.modal-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.modal-header strong {
+  color: #eef4fa;
+  display: block;
+  font-size: 1rem;
 }
 
 .canvas-card--three {
@@ -620,20 +768,17 @@ textarea {
   }
 
   .cad-ribbon-panel {
-    min-height: 0;
-  }
-
-  .workspace-header {
-    flex-direction: column;
-  }
-
-  .workspace-header-side {
-    align-items: flex-start;
+    height: auto;
   }
 
   .properties-float {
-    right: 10px;
-    top: 78px;
+    left: 10px;
+    top: 10px;
     width: min(320px, calc(100% - 20px));
+  }
+
+  .navigation-widget {
+    right: 10px;
+    top: 10px;
   }
 }

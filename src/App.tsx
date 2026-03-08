@@ -17,6 +17,7 @@ import {
   inspectImportedDesign,
   isGroupableEntityType,
   maxViewWidth,
+  millimeterStep,
   metersToSvg,
   minViewWidth,
   normalizeImportedDesign,
@@ -94,6 +95,7 @@ function App() {
   const [groups, setGroups] = useState<Group[]>(initial.groups ?? [])
   const [jsonEditorText, setJsonEditorText] = useState(() => JSON.stringify(initial, null, 2))
   const [jsonEditorError, setJsonEditorError] = useState('')
+  const [jsonEditorOpen, setJsonEditorOpen] = useState(false)
   const lastSnapshotRef = useRef<string>('')
   const lastDesignRef = useRef<PersistedDesign>(cloneDesign(initial))
   const currentDesignRef = useRef<PersistedDesign>(cloneDesign(initial))
@@ -1192,6 +1194,17 @@ function App() {
     setViewBox(defaultProjectSettings.planViewBox)
   }
 
+  const panView = (direction: 'north' | 'south' | 'west' | 'east') => {
+    const stepX = viewBox.width * 0.18
+    const stepY = viewBox.height * 0.18
+
+    setViewBox((current) => ({
+      ...current,
+      x: direction === 'west' ? current.x - stepX : direction === 'east' ? current.x + stepX : current.x,
+      y: direction === 'north' ? current.y - stepY : direction === 'south' ? current.y + stepY : current.y,
+    }))
+  }
+
   const handleWheel = (event: WheelEvent<SVGSVGElement>) => {
     event.preventDefault()
     const bounds = event.currentTarget.getBoundingClientRect()
@@ -1405,7 +1418,7 @@ function App() {
     setSurfaces((current) =>
       current.map((surface) =>
         surface.id === selectedSurface.id
-          ? { ...surface, ...changes, x: roundToGrid(changes.x ?? surface.x), y: roundToGrid(changes.y ?? surface.y), width: Math.max(0.3, roundToGrid(changes.width ?? surface.width)), depth: Math.max(0.3, roundToGrid(changes.depth ?? surface.depth)), elevation: roundToGrid(changes.elevation ?? surface.elevation, 0.05), thickness: roundToGrid(changes.thickness ?? surface.thickness, 0.05) }
+          ? { ...surface, ...changes, x: roundToGrid(changes.x ?? surface.x), y: roundToGrid(changes.y ?? surface.y), width: Math.max(0.3, roundToGrid(changes.width ?? surface.width)), depth: Math.max(0.3, roundToGrid(changes.depth ?? surface.depth)), elevation: roundToGrid(changes.elevation ?? surface.elevation), thickness: roundToGrid(changes.thickness ?? surface.thickness) }
           : surface,
       ),
     )
@@ -1419,7 +1432,7 @@ function App() {
     setStairs((current) =>
       current.map((stair) =>
         stair.id === selectedStair.id
-          ? { ...stair, ...changes, x: roundToGrid(changes.x ?? stair.x), y: roundToGrid(changes.y ?? stair.y), width: Math.max(0.3, roundToGrid(changes.width ?? stair.width)), depth: Math.max(0.3, roundToGrid(changes.depth ?? stair.depth)), fromElevation: roundToGrid(changes.fromElevation ?? stair.fromElevation, 0.05), toElevation: roundToGrid(changes.toElevation ?? stair.toElevation, 0.05), steps: Math.max(2, Math.round(changes.steps ?? stair.steps)) }
+          ? { ...stair, ...changes, x: roundToGrid(changes.x ?? stair.x), y: roundToGrid(changes.y ?? stair.y), width: Math.max(0.3, roundToGrid(changes.width ?? stair.width)), depth: Math.max(0.3, roundToGrid(changes.depth ?? stair.depth)), fromElevation: roundToGrid(changes.fromElevation ?? stair.fromElevation), toElevation: roundToGrid(changes.toElevation ?? stair.toElevation), steps: Math.max(2, Math.round(changes.steps ?? stair.steps)) }
           : stair,
       ),
     )
@@ -1430,7 +1443,18 @@ function App() {
       return
     }
 
-    setFreeWalls((current) => current.map((wall) => (wall.id === selectedWall.id ? { ...wall, ...changes } : wall)))
+    setFreeWalls((current) =>
+      current.map((wall) =>
+        wall.id === selectedWall.id
+          ? {
+              ...wall,
+              ...changes,
+              start: changes.start ? { ...changes.start, x: roundToGrid(changes.start.x), y: roundToGrid(changes.start.y) } : wall.start,
+              end: changes.end ? { ...changes.end, x: roundToGrid(changes.end.x), y: roundToGrid(changes.end.y) } : wall.end,
+            }
+          : wall,
+      ),
+    )
   }
 
   const roomPolygon = roomPoints.map((point) => `${metersToSvg(point.x)},${metersToSvg(point.y)}`).join(' ')
@@ -1445,7 +1469,7 @@ function App() {
           ? `Herramienta ${tool}`
           : activeTopMenu === 'save'
             ? `Autosave ${autosaveState}`
-            : `Muros ${wallHeight.toFixed(2)} m / ${wallThickness.toFixed(2)} m`
+            : `Muros ${wallHeight.toFixed(3)} m / ${wallThickness.toFixed(3)} m`
 
   return (
     <div className="app-shell">
@@ -1548,7 +1572,27 @@ function App() {
                   <button onClick={() => zoomView(1.15)} type="button">Zoom -</button>
                   <button onClick={resetNavigation} type="button">Reencuadrar</button>
                 </div>
-                <p className="detail-text cad-mono">Zoom {viewZoomPercent}% · X {Math.round(viewBox.x)} · Y {Math.round(viewBox.y)}</p>
+                <p className="detail-text cad-mono">Zoom {viewZoomPercent}% · X {viewBox.x.toFixed(1)} · Y {viewBox.y.toFixed(1)}</p>
+              </section>
+
+              <section className="cad-group">
+                <span className="section-label">Estado</span>
+                <div className="stats">
+                  <span>{roomPoints.length} vertices</span>
+                  <span>{allWalls.length} muros</span>
+                  <span>{surfaces.length} superficies</span>
+                  <span>{stairs.length} escaleras</span>
+                </div>
+                <p className="detail-text">{activeProjectName} · {viewMode === '2d' ? 'Planta' : '3D'}</p>
+              </section>
+
+              <section className="cad-group">
+                <span className="section-label">Paneles</span>
+                <div className="button-stack">
+                  <button className={propertiesOpen ? 'active' : ''} onClick={() => setPropertiesOpen((current) => !current)} type="button">
+                    {propertiesOpen ? 'Ocultar propiedades' : 'Mostrar propiedades'}
+                  </button>
+                </div>
               </section>
             </div>
           ) : null}
@@ -1581,24 +1625,9 @@ function App() {
           ) : null}
 
           {activeTopMenu === 'save' ? (
-            <div className="cad-ribbon-panel cad-ribbon-panel--data">
+            <div className="cad-ribbon-panel">
               <section className="cad-group">
                 <span className="section-label">Persistencia</span>
-                <div className="button-stack">
-                  <button onClick={saveDesign} type="button">Guardar diseño</button>
-                  <button onClick={loadSavedDesign} type="button">Cargar guardado</button>
-                  <button onClick={downloadDesign} type="button">Descargar JSON</button>
-                  <button onClick={() => importInputRef.current?.click()} type="button">Importar JSON</button>
-                </div>
-                <div className="button-stack">
-                  <button className="danger" disabled={selectedEntityKeys.length === 0} onClick={deleteSelected} type="button">Borrar seleccionado</button>
-                </div>
-                <p className="detail-text autosave-text">Autosave: {autosaveState}</p>
-                <p className="detail-text">Ctrl/Cmd + click para multiseleccion. Ctrl/Cmd al mover o dibujar para enganchar.</p>
-                {saveMessage ? <p className="detail-text save-message">{saveMessage}</p> : null}
-              </section>
-
-              <section className="cad-group cad-group--wide cad-group--json">
                 <input accept="application/json" className="hidden-input" onChange={(event) => {
                   const file = event.target.files?.[0]
                   if (file) {
@@ -1606,58 +1635,19 @@ function App() {
                   }
                   event.currentTarget.value = ''
                 }} ref={importInputRef} type="file" />
-                <div className="json-editor">
-                  <div className="json-editor-header">
-                    <span className="section-label">Editor JSON</span>
-                    <div className="button-stack json-editor-actions">
-                      <button onClick={() => syncJsonEditorFromDesign(persistableDesign)} type="button">Volcar actual</button>
-                      <button onClick={() => {
-                        try {
-                          const formatted = JSON.stringify(JSON.parse(jsonEditorText), null, 2)
-                          setJsonEditorText(formatted)
-                          setJsonEditorError('')
-                        } catch {
-                          setJsonEditorError('No se puede formatear un JSON invalido.')
-                        }
-                      }} type="button">Formatear</button>
-                      <button disabled={jsonInspection.errors.length > 0 || !jsonInspection.normalized} onClick={applyJsonEditor} type="button">Aplicar JSON</button>
-                    </div>
-                  </div>
-                  <textarea
-                    onChange={(event) => {
-                      setJsonEditorText(event.target.value)
-                      if (jsonEditorError) {
-                        setJsonEditorError('')
-                      }
-                    }}
-                    spellCheck={false}
-                    value={jsonEditorText}
-                  />
-                  <div className="json-editor-status">
-                    <p className="detail-text json-editor-summary">
-                      {jsonInspection.errors.length > 0
-                        ? `Errores: ${jsonInspection.errors.length}`
-                        : jsonInspection.warnings.length > 0
-                          ? `Listo para aplicar con ${jsonInspection.warnings.length} ajustes`
-                          : 'Listo para aplicar sin cambios forzados'}
-                    </p>
-                    {jsonInspection.errors.length > 0 ? (
-                      <ul className="json-editor-list json-editor-list--error">
-                        {jsonInspection.errors.map((issue) => (
-                          <li key={issue}>{issue}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    {jsonInspection.warnings.length > 0 ? (
-                      <ul className="json-editor-list json-editor-list--warning">
-                        {jsonInspection.warnings.map((issue) => (
-                          <li key={issue}>{issue}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </div>
-                  {jsonEditorError ? <p className="detail-text json-editor-error">{jsonEditorError}</p> : null}
+                <div className="button-stack">
+                  <button onClick={saveDesign} type="button">Guardar diseño</button>
+                  <button onClick={loadSavedDesign} type="button">Cargar guardado</button>
+                  <button onClick={downloadDesign} type="button">Descargar JSON</button>
+                  <button onClick={() => importInputRef.current?.click()} type="button">Importar JSON</button>
+                  <button onClick={() => setJsonEditorOpen(true)} type="button">Editor JSON</button>
                 </div>
+                <div className="button-stack">
+                  <button className="danger" disabled={selectedEntityKeys.length === 0} onClick={deleteSelected} type="button">Borrar seleccionado</button>
+                </div>
+                <p className="detail-text autosave-text">Autosave: {autosaveState}</p>
+                <p className="detail-text">Ctrl/Cmd + click para multiseleccion. Ctrl/Cmd al mover o dibujar para enganchar.</p>
+                {saveMessage ? <p className="detail-text save-message">{saveMessage}</p> : null}
               </section>
             </div>
           ) : null}
@@ -1669,15 +1659,15 @@ function App() {
                 <label>
                   Altura de muros
                   <div className="inline-field">
-                    <input max="4.5" min="2.2" onChange={(event) => setWallHeight(Number(event.target.value))} step="0.1" type="range" value={wallHeight} />
-                    <strong>{wallHeight.toFixed(2)} m</strong>
+                    <input max="4.5" min="2.2" onChange={(event) => setWallHeight(Number(event.target.value))} step={millimeterStep} type="range" value={wallHeight} />
+                    <strong>{wallHeight.toFixed(3)} m</strong>
                   </div>
                 </label>
                 <label>
                   Grosor de muros
                   <div className="inline-field">
-                    <input max="0.4" min="0.1" onChange={(event) => setWallThickness(Number(event.target.value))} step="0.01" type="range" value={wallThickness} />
-                    <strong>{wallThickness.toFixed(2)} m</strong>
+                    <input max="0.4" min="0.1" onChange={(event) => setWallThickness(Number(event.target.value))} step={millimeterStep} type="range" value={wallThickness} />
+                    <strong>{wallThickness.toFixed(3)} m</strong>
                   </div>
                 </label>
               </section>
@@ -1699,40 +1689,15 @@ function App() {
       </nav>
 
       <main className="workspace">
-        <div className="workspace-header">
-          <div>
-            <h2>{viewMode === '2d' ? 'Plano editable' : 'Modelo 3D'}</h2>
-            <p>{viewMode === '2d' ? 'Rueda para zoom. Boton central o herramienta Pan para mover la vista. Arrastra muros libres, superficies y escaleras para recolocarlos.' : 'La vista 3D refleja el mismo diseño guardable y los colores configurados.'}</p>
-          </div>
-          <div className="workspace-header-side">
-            <div className="stats">
-              <span>{roomPoints.length} vertices</span>
-              <span>{allWalls.length} muros</span>
-              <span>{surfaces.length} superficies</span>
-              <span>{stairs.length} escaleras</span>
-            </div>
-            {viewMode === '2d' ? (
-              <div className="nav-dock">
-                <button onClick={() => zoomView(0.85)} type="button">+</button>
-                <button onClick={() => zoomView(1.15)} type="button">-</button>
-                <button onClick={resetNavigation} type="button">Home</button>
-                <span className="cad-mono">{viewZoomPercent}%</span>
-              </div>
-            ) : null}
-          </div>
-        </div>
         <div className={`properties-float ${propertiesOpen ? 'properties-float--open' : ''}`}>
-          <button className="properties-toggle" onClick={() => setPropertiesOpen((current) => !current)} type="button">
-            {propertiesOpen ? 'Ocultar propiedades' : 'Propiedades'}
-          </button>
           {propertiesOpen ? (
             <div className="properties-card">
               <span className="section-label">Seleccion</span>
               {selectedDoor ? (
                 <>
                   <p className="detail-text">Puerta en {selectedDoor.wallId}</p>
-                  <label>Offset <input className="small-input" min="0.4" onChange={(event) => updateSelectedDoor({ offset: Number(event.target.value) })} step="0.1" type="number" value={selectedDoor.offset} /></label>
-                  <label>Ancho <input className="small-input" min="0.6" onChange={(event) => updateSelectedDoor({ width: Number(event.target.value) })} step="0.1" type="number" value={selectedDoor.width} /></label>
+                  <label>Offset <input className="small-input" min="0.4" onChange={(event) => updateSelectedDoor({ offset: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedDoor.offset} /></label>
+                  <label>Ancho <input className="small-input" min="0.6" onChange={(event) => updateSelectedDoor({ width: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedDoor.width} /></label>
                   <label>Color <input onChange={(event) => updateSelectedDoor({ color: event.target.value })} type="color" value={selectedDoor.color} /></label>
                   <button className="danger" onClick={deleteSelected} type="button">Eliminar puerta</button>
                 </>
@@ -1740,10 +1705,10 @@ function App() {
               {selectedWall ? (
                 <>
                   <p className="detail-text">Muro libre</p>
-                  <label>Inicio X <input className="small-input" onChange={(event) => updateSelectedWall({ start: { ...selectedWall.start, x: Number(event.target.value) } })} step="0.1" type="number" value={selectedWall.start.x} /></label>
-                  <label>Inicio Y <input className="small-input" onChange={(event) => updateSelectedWall({ start: { ...selectedWall.start, y: Number(event.target.value) } })} step="0.1" type="number" value={selectedWall.start.y} /></label>
-                  <label>Fin X <input className="small-input" onChange={(event) => updateSelectedWall({ end: { ...selectedWall.end, x: Number(event.target.value) } })} step="0.1" type="number" value={selectedWall.end.x} /></label>
-                  <label>Fin Y <input className="small-input" onChange={(event) => updateSelectedWall({ end: { ...selectedWall.end, y: Number(event.target.value) } })} step="0.1" type="number" value={selectedWall.end.y} /></label>
+                  <label>Inicio X <input className="small-input" onChange={(event) => updateSelectedWall({ start: { ...selectedWall.start, x: Number(event.target.value) } })} step={millimeterStep} type="number" value={selectedWall.start.x} /></label>
+                  <label>Inicio Y <input className="small-input" onChange={(event) => updateSelectedWall({ start: { ...selectedWall.start, y: Number(event.target.value) } })} step={millimeterStep} type="number" value={selectedWall.start.y} /></label>
+                  <label>Fin X <input className="small-input" onChange={(event) => updateSelectedWall({ end: { ...selectedWall.end, x: Number(event.target.value) } })} step={millimeterStep} type="number" value={selectedWall.end.x} /></label>
+                  <label>Fin Y <input className="small-input" onChange={(event) => updateSelectedWall({ end: { ...selectedWall.end, y: Number(event.target.value) } })} step={millimeterStep} type="number" value={selectedWall.end.y} /></label>
                   <label>Color <input onChange={(event) => updateSelectedWall({ color: event.target.value })} type="color" value={selectedWall.color} /></label>
                   <button className="danger" onClick={deleteSelected} type="button">Eliminar muro</button>
                 </>
@@ -1752,12 +1717,12 @@ function App() {
                 <>
                   <p className="detail-text">{selectedSurface.label}</p>
                   <label>Nombre <input onChange={(event) => updateSelectedSurface({ label: event.target.value })} type="text" value={selectedSurface.label} /></label>
-                  <label>X <input className="small-input" onChange={(event) => updateSelectedSurface({ x: Number(event.target.value) })} step="0.1" type="number" value={selectedSurface.x} /></label>
-                  <label>Y <input className="small-input" onChange={(event) => updateSelectedSurface({ y: Number(event.target.value) })} step="0.1" type="number" value={selectedSurface.y} /></label>
-                  <label>Ancho <input className="small-input" onChange={(event) => updateSelectedSurface({ width: Number(event.target.value) })} step="0.1" type="number" value={selectedSurface.width} /></label>
-                  <label>Fondo <input className="small-input" onChange={(event) => updateSelectedSurface({ depth: Number(event.target.value) })} step="0.1" type="number" value={selectedSurface.depth} /></label>
-                  <label>Cota <input className="small-input" onChange={(event) => updateSelectedSurface({ elevation: Number(event.target.value) })} step="0.05" type="number" value={selectedSurface.elevation} /></label>
-                  <label>Espesor <input className="small-input" onChange={(event) => updateSelectedSurface({ thickness: Number(event.target.value) })} step="0.05" type="number" value={selectedSurface.thickness} /></label>
+                  <label>X <input className="small-input" onChange={(event) => updateSelectedSurface({ x: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedSurface.x} /></label>
+                  <label>Y <input className="small-input" onChange={(event) => updateSelectedSurface({ y: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedSurface.y} /></label>
+                  <label>Ancho <input className="small-input" onChange={(event) => updateSelectedSurface({ width: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedSurface.width} /></label>
+                  <label>Fondo <input className="small-input" onChange={(event) => updateSelectedSurface({ depth: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedSurface.depth} /></label>
+                  <label>Cota <input className="small-input" onChange={(event) => updateSelectedSurface({ elevation: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedSurface.elevation} /></label>
+                  <label>Espesor <input className="small-input" onChange={(event) => updateSelectedSurface({ thickness: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedSurface.thickness} /></label>
                   <label>Color <input onChange={(event) => updateSelectedSurface({ color: event.target.value })} type="color" value={selectedSurface.color} /></label>
                   <button className="danger" onClick={deleteSelected} type="button">Eliminar superficie</button>
                 </>
@@ -1766,12 +1731,12 @@ function App() {
                 <>
                   <p className="detail-text">{selectedStair.label}</p>
                   <label>Nombre <input onChange={(event) => updateSelectedStair({ label: event.target.value })} type="text" value={selectedStair.label} /></label>
-                  <label>X <input className="small-input" onChange={(event) => updateSelectedStair({ x: Number(event.target.value) })} step="0.1" type="number" value={selectedStair.x} /></label>
-                  <label>Y <input className="small-input" onChange={(event) => updateSelectedStair({ y: Number(event.target.value) })} step="0.1" type="number" value={selectedStair.y} /></label>
-                  <label>Ancho <input className="small-input" onChange={(event) => updateSelectedStair({ width: Number(event.target.value) })} step="0.1" type="number" value={selectedStair.width} /></label>
-                  <label>Fondo <input className="small-input" onChange={(event) => updateSelectedStair({ depth: Number(event.target.value) })} step="0.1" type="number" value={selectedStair.depth} /></label>
-                  <label>Cota origen <input className="small-input" onChange={(event) => updateSelectedStair({ fromElevation: Number(event.target.value) })} step="0.05" type="number" value={selectedStair.fromElevation} /></label>
-                  <label>Cota destino <input className="small-input" onChange={(event) => updateSelectedStair({ toElevation: Number(event.target.value) })} step="0.05" type="number" value={selectedStair.toElevation} /></label>
+                  <label>X <input className="small-input" onChange={(event) => updateSelectedStair({ x: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedStair.x} /></label>
+                  <label>Y <input className="small-input" onChange={(event) => updateSelectedStair({ y: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedStair.y} /></label>
+                  <label>Ancho <input className="small-input" onChange={(event) => updateSelectedStair({ width: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedStair.width} /></label>
+                  <label>Fondo <input className="small-input" onChange={(event) => updateSelectedStair({ depth: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedStair.depth} /></label>
+                  <label>Cota origen <input className="small-input" onChange={(event) => updateSelectedStair({ fromElevation: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedStair.fromElevation} /></label>
+                  <label>Cota destino <input className="small-input" onChange={(event) => updateSelectedStair({ toElevation: Number(event.target.value) })} step={millimeterStep} type="number" value={selectedStair.toElevation} /></label>
                   <label>Peldaños <input className="small-input" onChange={(event) => updateSelectedStair({ steps: Number(event.target.value) })} step="1" type="number" value={selectedStair.steps} /></label>
                   <label>Color <input onChange={(event) => updateSelectedStair({ color: event.target.value })} type="color" value={selectedStair.color} /></label>
                   <button className="danger" onClick={deleteSelected} type="button">Eliminar escalera</button>
@@ -1819,7 +1784,7 @@ function App() {
                     x={metersToSvg(surface.x)}
                     y={metersToSvg(surface.y)}
                   />
-                  <text className="surface-label" x={metersToSvg(surface.x + surface.width / 2)} y={metersToSvg(surface.y + surface.depth / 2)}>{surface.label} +{surface.elevation.toFixed(2)} m</text>
+                  <text className="surface-label" x={metersToSvg(surface.x + surface.width / 2)} y={metersToSvg(surface.y + surface.depth / 2)}>{surface.label} +{surface.elevation.toFixed(3)} m</text>
                 </g>
               ))}
 
@@ -1861,7 +1826,7 @@ function App() {
                       const stepY = y + ((index + 1) / stair.steps) * depth
                       return <line className="stairs-step" key={`${stair.id}-v-${index}`} style={{ stroke: stair.color }} x1={x} x2={x + width} y1={stepY} y2={stepY} />
                     })}
-                    <text className="surface-label" x={x + width / 2} y={y + depth / 2}>{stair.label} {stair.fromElevation.toFixed(2)}?{stair.toElevation.toFixed(2)} m</text>
+                    <text className="surface-label" x={x + width / 2} y={y + depth / 2}>{stair.label} {stair.fromElevation.toFixed(3)}?{stair.toElevation.toFixed(3)} m</text>
                   </g>
                 )
               })}
@@ -1901,7 +1866,7 @@ function App() {
                       y1={start.y}
                       y2={end.y}
                     />
-                    <text className="wall-label" x={(start.x + end.x) / 2} y={(start.y + end.y) / 2 - 12}>{wall.length.toFixed(2)} m</text>
+                    <text className="wall-label" x={(start.x + end.x) / 2} y={(start.y + end.y) / 2 - 12}>{wall.length.toFixed(3)} m</text>
                   </g>
                 )
               })}
@@ -1929,7 +1894,7 @@ function App() {
                 return (
                   <g key={point.id}>
                     <circle className="point-handle" cx={canvasPoint.x} cy={canvasPoint.y} onPointerDown={(event) => { event.stopPropagation(); beginGestureHistory(); setInteraction({ type: 'room-point', pointId: point.id }); setTool('select') }} r={pointRadius} />
-                    <text className="point-label" x={canvasPoint.x + 12} y={canvasPoint.y - 12}>{point.x.toFixed(1)}, {point.y.toFixed(1)}</text>
+                    <text className="point-label" x={canvasPoint.x + 12} y={canvasPoint.y - 12}>{point.x.toFixed(3)}, {point.y.toFixed(3)}</text>
                   </g>
                 )
               })}
@@ -1954,6 +1919,112 @@ function App() {
             <Scene3D {...persistableDesign} onOrbitChange={setOrbit} orbit={orbit} />
           </div>
         )}
+
+        {viewMode === '2d' ? (
+          <>
+            <div className="navigation-widget">
+              <div className="navigation-compass">
+                <button className="navigation-direction navigation-north" onClick={() => panView('north')} type="button">N</button>
+                <button className="navigation-direction navigation-west" onClick={() => panView('west')} type="button">O</button>
+                <button className="navigation-direction navigation-east" onClick={() => panView('east')} type="button">E</button>
+                <button className="navigation-direction navigation-south" onClick={() => panView('south')} type="button">S</button>
+                <button className="navigation-compass-center" onClick={resetNavigation} type="button">TOP</button>
+              </div>
+              <div className="navigation-dock">
+                <button onClick={() => zoomView(0.85)} type="button">+</button>
+                <button onClick={() => zoomView(1.15)} type="button">-</button>
+                <button onClick={resetNavigation} type="button">Home</button>
+              </div>
+            </div>
+
+            <div className="axis-widget">
+              <span className="axis-widget__y">Y</span>
+              <span className="axis-widget__x">X</span>
+            </div>
+          </>
+        ) : null}
+
+        <div className="workspace-statusbar">
+          <span>MODELO</span>
+          <span>{viewMode === '2d' ? '2D' : '3D'}</span>
+          <span>{tool}</span>
+          <span>{activeProjectName}</span>
+          <span>{viewMode === '2d' ? `Zoom ${viewZoomPercent}%` : `Orbit ${orbit.position.map((value) => value.toFixed(1)).join(', ')}`}</span>
+          <span>{autosaveState}</span>
+        </div>
+
+        {jsonEditorOpen ? (
+          <div className="modal-backdrop" onClick={() => setJsonEditorOpen(false)} role="presentation">
+            <div
+              className="modal-panel"
+              onClick={(event) => event.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Editor JSON"
+            >
+              <div className="modal-header">
+                <div>
+                  <strong>Editor JSON</strong>
+                  <p className="detail-text">Edicion numerica del plano y validacion antes de aplicar.</p>
+                </div>
+                <button onClick={() => setJsonEditorOpen(false)} type="button">Cerrar</button>
+              </div>
+
+              <div className="json-editor json-editor--modal">
+                <div className="json-editor-header">
+                  <span className="section-label">Diseño</span>
+                  <div className="button-stack json-editor-actions">
+                    <button onClick={() => syncJsonEditorFromDesign(persistableDesign)} type="button">Volcar actual</button>
+                    <button onClick={() => {
+                      try {
+                        const formatted = JSON.stringify(JSON.parse(jsonEditorText), null, 2)
+                        setJsonEditorText(formatted)
+                        setJsonEditorError('')
+                      } catch {
+                        setJsonEditorError('No se puede formatear un JSON invalido.')
+                      }
+                    }} type="button">Formatear</button>
+                    <button disabled={jsonInspection.errors.length > 0 || !jsonInspection.normalized} onClick={applyJsonEditor} type="button">Aplicar JSON</button>
+                  </div>
+                </div>
+                <textarea
+                  onChange={(event) => {
+                    setJsonEditorText(event.target.value)
+                    if (jsonEditorError) {
+                      setJsonEditorError('')
+                    }
+                  }}
+                  spellCheck={false}
+                  value={jsonEditorText}
+                />
+                <div className="json-editor-status">
+                  <p className="detail-text json-editor-summary">
+                    {jsonInspection.errors.length > 0
+                      ? `Errores: ${jsonInspection.errors.length}`
+                      : jsonInspection.warnings.length > 0
+                        ? `Listo para aplicar con ${jsonInspection.warnings.length} ajustes`
+                        : 'Listo para aplicar sin cambios forzados'}
+                  </p>
+                  {jsonInspection.errors.length > 0 ? (
+                    <ul className="json-editor-list json-editor-list--error">
+                      {jsonInspection.errors.map((issue) => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {jsonInspection.warnings.length > 0 ? (
+                    <ul className="json-editor-list json-editor-list--warning">
+                      {jsonInspection.warnings.map((issue) => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+                {jsonEditorError ? <p className="detail-text json-editor-error">{jsonEditorError}</p> : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
     </div>
   )

@@ -24,6 +24,7 @@ export const pixelsPerMeter = 120
 export const pointRadius = 8
 export const minViewWidth = 240
 export const maxViewWidth = 3200
+export const millimeterStep = 0.001
 
 export const defaultSceneStyle: SceneStyle = {
   roomWallColor: '#f7f2ea',
@@ -130,8 +131,10 @@ export function uid(prefix: string) {
 
 const samplePlanStairs: Stair[] = sampleStairs.slice(0, 0)
 
-export function roundToGrid(value: number, step = 0.1) {
-  return Math.round(value / step) * step
+export function roundToGrid(value: number, step = millimeterStep) {
+  const decimals = Math.max(0, Math.ceil(-Math.log10(step)))
+  const rounded = Math.round((value + Number.EPSILON) / step) * step
+  return Number(rounded.toFixed(decimals))
 }
 
 export function clamp(value: number, min: number, max: number) {
@@ -326,8 +329,8 @@ export function normalizeImportedDesign(input: unknown): PersistedDesign | null 
       y: roundToGrid(surface.y),
       width: Math.max(0.3, roundToGrid(surface.width)),
       depth: Math.max(0.3, roundToGrid(surface.depth)),
-      elevation: roundToGrid(surface.elevation, 0.05),
-      thickness: Math.max(0.05, roundToGrid(surface.thickness, 0.05)),
+      elevation: roundToGrid(surface.elevation),
+      thickness: Math.max(0.05, roundToGrid(surface.thickness)),
     }))
 
   const stairs = candidate.stairs
@@ -350,8 +353,8 @@ export function normalizeImportedDesign(input: unknown): PersistedDesign | null 
       y: roundToGrid(stair.y),
       width: Math.max(0.3, roundToGrid(stair.width)),
       depth: Math.max(0.3, roundToGrid(stair.depth)),
-      fromElevation: roundToGrid(stair.fromElevation, 0.05),
-      toElevation: roundToGrid(stair.toElevation, 0.05),
+      fromElevation: roundToGrid(stair.fromElevation),
+      toElevation: roundToGrid(stair.toElevation),
       steps: Math.max(2, Math.round(stair.steps)),
     }))
 

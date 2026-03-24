@@ -24,8 +24,11 @@ ver_hueco        = false;
 ver_placas_base  = true;
 ver_escalera     = true;
 ver_vol_esc      = false;
-ver_etiquetas_pilares = false;
+ver_etiquetas_pilares = true;
 ver_cotas        = false;
 ver_habitacion   = false;
+ver_techo        = false;
+ver_cocina       = true;
+ver_silueta      = true;
 
 ensamblaje();

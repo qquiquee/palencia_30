@@ -23,9 +23,9 @@ module capa_cartelas() {
                   ala=cartela_ala, esp=cartela_esp, sx=-1, sz=-1);
 
         // Plataforma pequena: dos esquinas exteriores
-        cartelaYZ(x2_min - pilar_ext/2 + cartela_retr, y2_max - pilar_ext/2, z_viga_pequena + viga_h - cartela_retr,
+        cartelaYZ(x_p8 - pilar_ext/2 + cartela_retr, y2_max - pilar_ext/2, z_viga_pequena + viga_h - cartela_retr,
                   ala=220, esp=cartela_esp, sy=-1, sz=-1);
-        cartelaXZ(x2_min + pilar_ext/2, y2_max + pilar_ext/2 - cartela_retr, z_viga_pequena + viga_h - cartela_retr,
+        cartelaXZ(x_p8 + pilar_ext/2, y2_max + pilar_ext/2 - cartela_retr, z_viga_pequena + viga_h - cartela_retr,
                   ala=220, esp=cartela_esp, sx=1, sz=-1);
 
         cartelaYZ(x2_max + pilar_ext/2 - cartela_retr, y2_max - pilar_ext/2, z_viga_pequena + viga_h - cartela_retr,
@@ -39,9 +39,11 @@ module capa_barandillas() {
     // Proteccion del hueco de escalera en plataforma baja
     poste_barandilla(x1_min,          y1_min,          z_bar_grande, bar_h);
     poste_barandilla(x1_min,          hueco_esc_y_min, z_bar_grande, bar_h);
+    poste_barandilla(x1_min,          hueco_esc_y_max, z_bar_grande, bar_h);
     poste_barandilla(hueco_esc_x_max, hueco_esc_y_min, z_bar_grande, bar_h);
-    poste_barandilla(hueco_esc_x_max, y1_max,          z_bar_grande, bar_h);
-    poste_barandilla(x2_min,          y1_max,          z_bar_grande, bar_h);
+    poste_barandilla(hueco_esc_x_max, hueco_esc_y_max, z_bar_grande, bar_h);
+    poste_barandilla(x1_min,          y2_min,          z_bar_grande, bar_h);
+    poste_barandilla(x2_min,          y2_min,          z_bar_grande, bar_h);
 
     // Lateral del descansillo superior: la boca de escalera queda libre en todo el ancho.
     pasamanosY(x1_min, y1_min, hueco_esc_y_min, z_bar_grande + bar_h - bar_pasamanos_h);
@@ -49,19 +51,25 @@ module capa_barandillas() {
     rodapieY(x1_min, y1_min, hueco_esc_y_min, z_bar_grande);
     barrotesY(x1_min, y1_min, hueco_esc_y_min, z_bar_grande + rodapie_h, h_barrotes);
 
-    pasamanosY(hueco_esc_x_max, hueco_esc_y_min, y1_max, z_bar_grande + bar_h - bar_pasamanos_h);
-    pasamanosY(hueco_esc_x_max, hueco_esc_y_min, y1_max, z_bar_grande + rodapie_h + h_barrotes/2);
-    rodapieY(hueco_esc_x_max, hueco_esc_y_min, y1_max, z_bar_grande);
-    barrotesY(hueco_esc_x_max, hueco_esc_y_min, y1_max, z_bar_grande + rodapie_h, h_barrotes);
+    pasamanosY(hueco_esc_x_max, hueco_esc_y_min, hueco_esc_y_max, z_bar_grande + bar_h - bar_pasamanos_h);
+    pasamanosY(hueco_esc_x_max, hueco_esc_y_min, hueco_esc_y_max, z_bar_grande + rodapie_h + h_barrotes/2);
+    rodapieY(hueco_esc_x_max, hueco_esc_y_min, hueco_esc_y_max, z_bar_grande);
+    barrotesY(hueco_esc_x_max, hueco_esc_y_min, hueco_esc_y_max, z_bar_grande + rodapie_h, h_barrotes);
 
-    pasamanosX(hueco_esc_x_max, x2_min, y1_max, z_bar_grande + bar_h - bar_pasamanos_h);
-    pasamanosX(hueco_esc_x_max, x2_min, y1_max, z_bar_grande + rodapie_h + h_barrotes/2);
-    rodapieX(hueco_esc_x_max, x2_min, y1_max, z_bar_grande);
-    barrotesX(hueco_esc_x_max, x2_min, y1_max, z_bar_grande + rodapie_h, h_barrotes);
+    // Cierre del hueco hacia la cocina y continuidad hasta la pared izquierda.
+    pasamanosX(x1_min, hueco_esc_x_max, hueco_esc_y_max, z_bar_grande + bar_h - bar_pasamanos_h);
+    pasamanosX(x1_min, hueco_esc_x_max, hueco_esc_y_max, z_bar_grande + rodapie_h + h_barrotes/2);
+    rodapieX(x1_min, hueco_esc_x_max, hueco_esc_y_max, z_bar_grande);
+    barrotesX(x1_min, hueco_esc_x_max, hueco_esc_y_max, z_bar_grande + rodapie_h, h_barrotes);
 
-    // Plataforma superior - solo lateral exterior vertical
+    // Plataforma superior - lateral exterior y cierre frontal hasta la pared izquierda
     poste_barandilla(x2_min, y2_min, z_bar_pequena, bar_h);
     poste_barandilla(x2_min, y2_max, z_bar_pequena, bar_h);
+
+    pasamanosX(x1_min, x2_min, y2_min, z_bar_grande + bar_h - bar_pasamanos_h);
+    pasamanosX(x1_min, x2_min, y2_min, z_bar_grande + rodapie_h + h_barrotes/2);
+    rodapieX(x1_min, x2_min, y2_min, z_bar_grande);
+    barrotesX(x1_min, x2_min, y2_min, z_bar_grande + rodapie_h, h_barrotes);
 
     pasamanosY(x2_min, y2_min, y2_max, z_bar_pequena + bar_h - bar_pasamanos_h);
     pasamanosY(x2_min, y2_min, y2_max, z_bar_pequena + rodapie_h + h_barrotes/2);
@@ -80,7 +88,67 @@ module capa_hueco() {
 }
 
 module capa_habitacion() {
-    caja_habitacion(0, L_hab, 0, W_hab, H_hab, hab_muro_esp);
+    puerta_principal_x_centro = x2_max - puerta_ancho/2;
+    puerta_bano_x_centro = x2_max - puerta_ancho - puerta_bano_sep - puerta_bano_ancho/2;
+    puerta_bano_x_der = x2_max - puerta_ancho - puerta_bano_sep;
+    bano_x_max = puerta_bano_x_der;
+    bano_x_min = 0;
+
+    caja_habitacion(
+        0, L_hab, 0, W_hab, H_hab, hab_muro_esp,
+        puerta_principal_x_centro, puerta_ancho, puerta_alto,
+        puerta_bano_x_centro, puerta_bano_ancho, puerta_bano_alto
+    );
+
+    caja_anexo_exterior(
+        bano_x_min, bano_x_max,
+        W_hab, bano_fondo, H_hab, hab_muro_esp
+    );
+
+    color([1,1,1])
+        tabique_x(puerta_bano_x_der, W_hab, W_hab + bano_fondo, H_hab, hab_muro_esp);
+}
+
+module capa_techo() {
+    puerta_bano_x_der = x2_max - puerta_ancho - puerta_bano_sep;
+
+    techo_rect(0, L_hab, 0, W_hab, H_hab, hab_muro_esp);
+    techo_rect(0, puerta_bano_x_der, W_hab, W_hab + bano_fondo, H_hab, hab_muro_esp);
+}
+
+module capa_cocina() {
+    puerta_bano_x_izq = x2_max - puerta_ancho - puerta_bano_sep - puerta_bano_ancho;
+    cocina_y_ini = W_hab - cocina_lado_largo;
+
+    // Tramo horizontal bajo la pared superior, desde la puerta del bano hasta la esquina izquierda.
+    mueble_bajo_rect(
+        x1_min, puerta_bano_x_izq,
+        W_hab - cocina_fondo, W_hab,
+        0, cocina_alto_cuerpo, cocina_encimera_esp
+    );
+
+    // Tramo vertical por la pared izquierda hasta el arranque del hueco de escalera.
+    mueble_bajo_rect(
+        x1_min, x1_min + cocina_fondo,
+        cocina_y_ini, W_hab,
+        0, cocina_alto_cuerpo, cocina_encimera_esp
+    );
+}
+
+module capa_silueta() {
+    silueta_persona(
+        hueco_esc_x_max + 350,
+        hueco_esc_y_min + 450,
+        z_suelo_grande,
+        silueta_h
+    );
+
+    silueta_persona(
+        x1_min + cocina_fondo + 320,
+        W_hab - cocina_fondo - 320,
+        0,
+        silueta_h
+    );
 }
 
 module capa_escalera(){
@@ -139,7 +207,7 @@ module capa_etiquetas_pilares() {
     etiqueta_pilar("P6", x1_max,            y1_max,           -70, -90);
     etiqueta_pilar("P7", (x1_min+x1_max)/2, y1_min,             0,  90);
 
-    etiqueta_pilar("P8",  x2_min, y2_max,   70, -90);
+    etiqueta_pilar("P8",  x_p8,  y2_max,   70, -90);
     etiqueta_pilar("P9",  x2_max, y2_max,  -70, -90);
     etiqueta_pilar("P10", x2_min, y2_min,   70,  90);
     etiqueta_pilar("P11", x2_max, y2_min,  -70,  90);

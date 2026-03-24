@@ -7,6 +7,12 @@ L_hab = 3460;
 W_hab = 4200;
 H_hab = 3500;
 hab_muro_esp = 100;
+puerta_ancho = 900;
+puerta_alto  = 2000;
+puerta_bano_sep   = 200;
+puerta_bano_ancho = 700;
+puerta_bano_alto  = 2000;
+bano_fondo = 1600;
 
 L1 = 3460;
 W1 = 2200;   // plataforma grande
@@ -36,7 +42,7 @@ taladro_margen = 25;
 
 // Escalera recta prevista
 ancho_escalera = 800;
-esc_recta_huella = 200;
+esc_recta_huella = 140;
 esc_recta_num_peldanos = 9;
 esc_recta_esp_peldano = 8;
 esc_recta_zanca_b = 80;
@@ -86,6 +92,9 @@ ver_vol_esc      = false;
 ver_etiquetas_pilares = false;
 ver_cotas        = false;
 ver_habitacion   = true;
+ver_techo        = true;
+ver_cocina       = true;
+ver_silueta      = false;
 
 // Etiquetas de referencia
 etiqueta_pilar_tam = 40;
@@ -100,6 +109,17 @@ cota_esp       = 2;
 cota_marca     = 35;
 cota_sep       = 180;
 cota_color     = [0.10, 0.25, 0.85];
+
+// Cocina
+cocina_fondo = 600;
+cocina_alto_cuerpo = 880;
+cocina_encimera_esp = 30;
+cocina_lado_largo = 2000;
+
+// Silueta humana de referencia
+silueta_h = 1750;
+silueta_cuerpo_d = 260;
+silueta_cabeza_d = 220;
 
 // Parametros escalera de caracol
 esc_d_ext = 1100;

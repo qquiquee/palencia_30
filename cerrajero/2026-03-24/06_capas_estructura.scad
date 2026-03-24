@@ -9,7 +9,7 @@ module capa_pilares() {
     pilarC(x1_max,            y1_max, altura_grande);
     pilarC((x1_min+x1_max)/2, y1_min, altura_grande);
 
-    pilarC(x2_min, y2_max, altura_pequena);
+    pilarC(x_p8,   y2_max, altura_pequena);
     pilarC(x2_max, y2_max, altura_pequena);
 
     pilar_sin_baseC(x2_min, y2_min, z_apoyo_sup, h_apoyo_sup);

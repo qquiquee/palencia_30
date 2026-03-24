@@ -4,6 +4,9 @@ module ensamblaje() {
     if (ver_habitacion)
         capa_habitacion();
 
+    if (ver_techo)
+        capa_techo();
+
     if (ver_pilares)
         color([0.72,0.72,0.76]) capa_pilares();
 
@@ -40,6 +43,12 @@ module ensamblaje() {
 
     if (ver_hueco)
         capa_hueco();
+
+    if (ver_cocina)
+        capa_cocina();
+
+    if (ver_silueta)
+        capa_silueta();
 
     if (ver_etiquetas_pilares)
         capa_etiquetas_pilares();

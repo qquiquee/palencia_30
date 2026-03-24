@@ -10,6 +10,8 @@ x2_max = L1;
 y2_min = W1;
 y2_max = W1 + W2;
 
+x_p8 = x2_max - puerta_ancho - puerta_bano_sep/2;
+
 z_sup_grande  = altura_grande;
 z_sup_pequena = altura_pequena;
 

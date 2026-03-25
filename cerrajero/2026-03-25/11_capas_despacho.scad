@@ -1,7 +1,7 @@
 // Capas de despacho
 
 module silla_despacho(x, y, z0, ang=0) {
-    color([0.78, 0.80, 0.82])
+    color([0.62, 0.50, 0.78])
         translate([x, y, z0])
             rotate([0, 0, ang]) {
                 translate([-220, -220, 0])
@@ -34,7 +34,7 @@ module capa_despacho() {
     silla_pos = punto_en_segmento(silla_pos_fondo, interpola_punto(desk_p0_in, desk_p1_in, 0.80), 300);
 
     // Tablero simple del despacho.
-    color([0.80, 0.82, 0.84])
+    color([0.72, 0.60, 0.86])
         translate([0, 0, z_mesa])
             linear_extrude(height=tablero_esp)
                 difference() {

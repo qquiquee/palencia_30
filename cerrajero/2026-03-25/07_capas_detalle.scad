@@ -81,9 +81,33 @@ module tramo_barandilla_segmento(p0, p1, z_base, h) {
     barrotes_segmento(p0, p1, z_base + rodapie_h, h_barrotes);
 }
 
+module tramo_barandilla_segmento_bajo_tablero(p0, p1, z_base, z_tablero) {
+    h_bar_local = z_tablero - z_base - 40;
+    h_barrotes_local = h_bar_local - rodapie_h - bar_pasamanos_h;
+
+    poste_barandilla(p0[0], p0[1], z_base, h_bar_local);
+    poste_barandilla(p1[0], p1[1], z_base, h_bar_local);
+
+    pasamanos_segmento(p0, p1, z_base + h_bar_local - bar_pasamanos_h);
+    pasamanos_segmento(p0, p1, z_base + rodapie_h + h_barrotes_local/2);
+    rodapie_segmento(p0, p1, z_base);
+    barrotes_segmento(p0, p1, z_base + rodapie_h, h_barrotes_local);
+}
+
 module capa_barandillas() {
+    desk_bar_p0 = punto_en_segmento(desk_p0, desk_p0_in, 500);
+    desk_bar_p1 = punto_en_segmento(desk_p1, desk_p1_in, 500);
+
     // Cama: borde libre hacia la cocina, siguiendo la viga sur.
     tramo_barandilla_segmento(cama_sw, cama_se, z_bar_pequena, bar_h);
+
+    // Despacho: barandilla baja bajo el tablero para retener en la viga sur.
+    tramo_barandilla_segmento_bajo_tablero(
+        desk_bar_p0,
+        desk_bar_p1,
+        z_viga_grande + viga_h,
+        z_suelo_grande + despacho_alto_tablero
+    );
 }
 
 module capa_hueco() {

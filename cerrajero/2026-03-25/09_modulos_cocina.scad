@@ -5,7 +5,7 @@ module mueble_bajo_rect(x_ini, x_fin, y_ini, y_fin, z0, h_cuerpo, esp_encimera){
         translate([x_ini, y_ini, z0])
             cube([x_fin - x_ini, y_fin - y_ini, h_cuerpo]);
 
-    color([0.18,0.18,0.18])
+    color([0.96,0.96,0.95])
         translate([x_ini, y_ini, z0 + h_cuerpo])
             cube([x_fin - x_ini, y_fin - y_ini, esp_encimera]);
 }

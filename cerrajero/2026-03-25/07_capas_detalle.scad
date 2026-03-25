@@ -35,46 +35,55 @@ module capa_cartelas() {
     }
 }
 
+module pasamanos_segmento(p0, p1, z_inf) {
+    largo = segmento_largo(p0, p1);
+    ang = segmento_angulo(p0, p1);
+
+    if (largo > 0)
+        translate([p0[0], p0[1], z_inf])
+            rotate([0, 0, ang])
+                translate([0, -bar_pasamanos_b/2, 0])
+                    tubo(largo, bar_pasamanos_b, bar_pasamanos_h, bar_pasamanos_esp);
+}
+
+module rodapie_segmento(p0, p1, z_inf) {
+    largo = segmento_largo(p0, p1);
+    ang = segmento_angulo(p0, p1);
+
+    if (largo > 0)
+        translate([p0[0], p0[1], z_inf])
+            rotate([0, 0, ang])
+                translate([0, -rodapie_esp/2, 0])
+                    cube([largo, rodapie_esp, rodapie_h]);
+}
+
+module barrotes_segmento(p0, p1, z_base, h) {
+    largo = segmento_largo(p0, p1);
+
+    if (largo > barrote_sep_max) {
+        n = floor(largo / barrote_sep_max);
+        paso = largo / (n + 1);
+
+        for (i = [1:n]) {
+            p = punto_en_segmento(p0, p1, i * paso);
+            barroteV(p[0], p[1], z_base, h);
+        }
+    }
+}
+
+module tramo_barandilla_segmento(p0, p1, z_base, h) {
+    poste_barandilla(p0[0], p0[1], z_base, h);
+    poste_barandilla(p1[0], p1[1], z_base, h);
+
+    pasamanos_segmento(p0, p1, z_base + h - bar_pasamanos_h);
+    pasamanos_segmento(p0, p1, z_base + rodapie_h + h_barrotes/2);
+    rodapie_segmento(p0, p1, z_base);
+    barrotes_segmento(p0, p1, z_base + rodapie_h, h_barrotes);
+}
+
 module capa_barandillas() {
-    // Proteccion del hueco de escalera en plataforma baja
-    poste_barandilla(x1_min,          y1_min,          z_bar_grande, bar_h);
-    poste_barandilla(x1_min,          hueco_esc_y_min, z_bar_grande, bar_h);
-    poste_barandilla(x1_min,          hueco_esc_y_max, z_bar_grande, bar_h);
-    poste_barandilla(hueco_esc_x_max, hueco_esc_y_min, z_bar_grande, bar_h);
-    poste_barandilla(hueco_esc_x_max, hueco_esc_y_max, z_bar_grande, bar_h);
-    poste_barandilla(x1_min,          y2_min,          z_bar_grande, bar_h);
-    poste_barandilla(x2_min,          y2_min,          z_bar_grande, bar_h);
-
-    // Lateral del descansillo superior: la boca de escalera queda libre en todo el ancho.
-    pasamanosY(x1_min, y1_min, hueco_esc_y_min, z_bar_grande + bar_h - bar_pasamanos_h);
-    pasamanosY(x1_min, y1_min, hueco_esc_y_min, z_bar_grande + rodapie_h + h_barrotes/2);
-    rodapieY(x1_min, y1_min, hueco_esc_y_min, z_bar_grande);
-    barrotesY(x1_min, y1_min, hueco_esc_y_min, z_bar_grande + rodapie_h, h_barrotes);
-
-    pasamanosY(hueco_esc_x_max, hueco_esc_y_min, hueco_esc_y_max, z_bar_grande + bar_h - bar_pasamanos_h);
-    pasamanosY(hueco_esc_x_max, hueco_esc_y_min, hueco_esc_y_max, z_bar_grande + rodapie_h + h_barrotes/2);
-    rodapieY(hueco_esc_x_max, hueco_esc_y_min, hueco_esc_y_max, z_bar_grande);
-    barrotesY(hueco_esc_x_max, hueco_esc_y_min, hueco_esc_y_max, z_bar_grande + rodapie_h, h_barrotes);
-
-    // Cierre del hueco hacia la cocina y continuidad hasta la pared izquierda.
-    pasamanosX(x1_min, hueco_esc_x_max, hueco_esc_y_max, z_bar_grande + bar_h - bar_pasamanos_h);
-    pasamanosX(x1_min, hueco_esc_x_max, hueco_esc_y_max, z_bar_grande + rodapie_h + h_barrotes/2);
-    rodapieX(x1_min, hueco_esc_x_max, hueco_esc_y_max, z_bar_grande);
-    barrotesX(x1_min, hueco_esc_x_max, hueco_esc_y_max, z_bar_grande + rodapie_h, h_barrotes);
-
-    // Plataforma superior - lateral exterior y cierre frontal hasta la pared izquierda
-    poste_barandilla(x2_min, y2_min, z_bar_pequena, bar_h);
-    poste_barandilla(x2_min, y2_max, z_bar_pequena, bar_h);
-
-    pasamanosX(x1_min, x2_min, y2_min, z_bar_grande + bar_h - bar_pasamanos_h);
-    pasamanosX(x1_min, x2_min, y2_min, z_bar_grande + rodapie_h + h_barrotes/2);
-    rodapieX(x1_min, x2_min, y2_min, z_bar_grande);
-    barrotesX(x1_min, x2_min, y2_min, z_bar_grande + rodapie_h, h_barrotes);
-
-    pasamanosY(x2_min, y2_min, y2_max, z_bar_pequena + bar_h - bar_pasamanos_h);
-    pasamanosY(x2_min, y2_min, y2_max, z_bar_pequena + rodapie_h + h_barrotes/2);
-    rodapieY(x2_min, y2_min, y2_max, z_bar_pequena);
-    barrotesY(x2_min, y2_min, y2_max, z_bar_pequena + rodapie_h, h_barrotes);
+    // Cama: borde libre hacia la cocina, siguiendo la viga sur.
+    tramo_barandilla_segmento(cama_sw, cama_se, z_bar_pequena, bar_h);
 }
 
 module capa_hueco() {

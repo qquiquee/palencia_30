@@ -77,8 +77,10 @@ cama_sw = [cama_sw_muro[0], cama_sw_muro[1] - estructura_retranqueo_muro];
 cama_se = [cama_ne[0] + (cama_sw[0] - cama_nw[0]), cama_ne[1] + (cama_sw[1] - cama_nw[1])];
 
 // Puntos de referencia de pilares, ahora ligados a la geometria real.
-p5_x = cama_nw[0];
-p5_y = cama_nw[1];
+p5_retranqueo_este = 700;
+p5_pos = punto_en_segmento(cama_nw, cama_ne, p5_retranqueo_este);
+p5_x = p5_pos[0];
+p5_y = p5_pos[1];
 p6_x = cama_ne[0];
 p6_y = cama_ne[1];
 p8_retranqueo_norte = 700;

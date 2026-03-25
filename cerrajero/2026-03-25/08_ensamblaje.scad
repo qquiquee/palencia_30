@@ -44,6 +44,9 @@ module ensamblaje() {
     if (ver_despacho)
         capa_despacho();
 
+    if (ver_cama)
+        capa_cama();
+
     if (ver_silueta)
         capa_silueta();
 

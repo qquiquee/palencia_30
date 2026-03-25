@@ -57,6 +57,13 @@ module rodapie_segmento(p0, p1, z_inf) {
                     cube([largo, rodapie_esp, rodapie_h]);
 }
 
+module tapa_rodapie(p0, p1, p2, p3, z_inf) {
+    color([0.84,0.84,0.86])
+        translate([0, 0, z_inf])
+            linear_extrude(height=rodapie_esp)
+                polygon([p0, p1, p2, p3]);
+}
+
 module barrotes_segmento(p0, p1, z_base, h) {
     largo = segmento_largo(p0, p1);
 
@@ -97,6 +104,10 @@ module tramo_barandilla_segmento_bajo_tablero(p0, p1, z_base, z_tablero) {
 module capa_barandillas() {
     desk_bar_p0 = punto_en_segmento(desk_p0, desk_p0_in, 500);
     desk_bar_p1 = punto_en_segmento(desk_p1, desk_p1_in, 500);
+    rodapie_union_p0 = plataforma_grande_se;
+    rodapie_union_p1 = plataforma_grande_ne;
+    rodapie_union_2_p0 = punto_en_segmento(plataforma_grande_se, plataforma_grande_sw, 250);
+    rodapie_union_2_p1 = punto_en_segmento(plataforma_grande_ne, plataforma_grande_nw, 250);
     cama_bar_paso_norte = 60;
     cama_bar_p0 = punto_en_segmento(cama_nw, cama_sw, cama_bar_paso_norte);
     cama_bar_p1 = cama_sw;
@@ -119,6 +130,17 @@ module capa_barandillas() {
         desk_bar_p1,
         z_viga_grande + viga_h,
         z_suelo_grande + despacho_alto_tablero
+    );
+
+    // Cierre entre plataformas para que no se cuele nada al vacio inferior.
+    rodapie_segmento(rodapie_union_p0, rodapie_union_p1, z_suelo_grande);
+    rodapie_segmento(rodapie_union_2_p0, rodapie_union_2_p1, z_suelo_grande);
+    tapa_rodapie(
+        rodapie_union_p0,
+        rodapie_union_p1,
+        rodapie_union_2_p1,
+        rodapie_union_2_p0,
+        z_suelo_grande + rodapie_h
     );
 }
 

@@ -76,6 +76,21 @@ cama_sw_muro = punto_en_segmento(hab_pared_oeste_b, hab_pared_oeste_a, cama_fond
 cama_sw = [cama_sw_muro[0], cama_sw_muro[1] - estructura_retranqueo_muro];
 cama_se = [cama_ne[0] + (cama_sw[0] - cama_nw[0]), cama_ne[1] + (cama_sw[1] - cama_nw[1])];
 
+// Colchon visible sobre la cama superior.
+cama_colchon_nw = cama_nw;
+cama_colchon_ne = punto_en_segmento(cama_nw, cama_ne, cama_colchon_ancho);
+cama_colchon_sw = punto_en_segmento(cama_nw, cama_sw, cama_colchon_largo);
+cama_colchon_se = [
+    cama_colchon_ne[0] + (cama_colchon_sw[0] - cama_colchon_nw[0]),
+    cama_colchon_ne[1] + (cama_colchon_sw[1] - cama_colchon_nw[1])
+];
+
+// Base del colchon.
+cama_base_nw = cama_colchon_nw;
+cama_base_ne = cama_colchon_ne;
+cama_base_sw = cama_colchon_sw;
+cama_base_se = cama_colchon_se;
+
 // Puntos de referencia de pilares, ahora ligados a la geometria real.
 p5_retranqueo_este = 700;
 p5_pos = punto_en_segmento(cama_nw, cama_ne, p5_retranqueo_este);
@@ -113,6 +128,14 @@ plataforma_grande_se = punto_en_segmento(
     plataforma_retranqueo_sur
 );
 plataforma_grande_nw = plataforma_grande_nw_base;
+
+// Escalon de acceso desde el despacho a la cama superior.
+escalon_union_p0 = interpola_punto(plataforma_grande_ne, plataforma_grande_nw, 0.28);
+escalon_union_p1 = interpola_punto(plataforma_grande_ne, plataforma_grande_nw, 0.68);
+escalon_cama_p0 = interpola_punto(escalon_union_p0, cama_base_sw, 0.18);
+escalon_cama_p1 = interpola_punto(escalon_union_p1, cama_base_se, 0.18);
+escalon_cama_p0_in = punto_en_segmento(escalon_cama_p0, cama_base_nw, escalon_cama_fondo);
+escalon_cama_p1_in = punto_en_segmento(escalon_cama_p1, cama_base_ne, escalon_cama_fondo);
 
 // La escalera va pegada a la pared este, lo mas al sur posible, y apoya en la viga sur.
 esc_recta_x_llegada = (plataforma_grande_sw[0] + plataforma_grande_se[0]) / 2;

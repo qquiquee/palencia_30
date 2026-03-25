@@ -110,6 +110,7 @@ ver_habitacion   = true;
 ver_techo        = true;
 ver_cocina       = true;
 ver_despacho     = true;
+ver_cama         = true;
 ver_silueta      = false;
 
 // Etiquetas de referencia
@@ -155,6 +156,14 @@ silueta_cabeza_d = 220;
 despacho_alto_tablero = 720;
 despacho_tablero_ancho = 1000;
 despacho_tablero_largo = 1400;
+
+// Cama visible
+cama_colchon_largo = 1900;
+cama_colchon_ancho = 1500;
+cama_colchon_esp = 180;
+cama_base_esp = 300;
+escalon_cama_h = 150;
+escalon_cama_fondo = 300;
 
 // Parametros escalera de caracol
 esc_d_ext = 1100;

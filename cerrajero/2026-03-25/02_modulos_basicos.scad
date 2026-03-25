@@ -81,6 +81,87 @@ module laminado_rect(x_ini, x_fin, y_ini, y_fin, z_inf){
             cube([x_fin - x_ini, y_fin - y_ini, laminado_esp]);
 }
 
+function segmento_dx(p0, p1) = p1[0] - p0[0];
+function segmento_dy(p0, p1) = p1[1] - p0[1];
+function segmento_largo(p0, p1) = sqrt(pow(segmento_dx(p0, p1), 2) + pow(segmento_dy(p0, p1), 2));
+function segmento_angulo(p0, p1) = atan2(segmento_dy(p0, p1), segmento_dx(p0, p1));
+function segmento_centro(p0, p1) = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2];
+function punto_en_segmento(p0, p1, dist) =
+    let(l = segmento_largo(p0, p1))
+    (l > 0
+        ? [p0[0] + segmento_dx(p0, p1) * (dist / l), p0[1] + segmento_dy(p0, p1) * (dist / l)]
+        : p0);
+function interpola_punto(p0, p1, t) = [p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t];
+function punto_en_y(p0, p1, y_obj) =
+    let(dy = p1[1] - p0[1])
+    (abs(dy) > 0.0001
+        ? interpola_punto(p0, p1, (y_obj - p0[1]) / dy)
+        : p0);
+
+module losa_poligonal(points, esp, z0=0){
+    translate([0, 0, z0])
+        linear_extrude(height=esp)
+            polygon(points);
+}
+
+module muro_segmento(p0, p1, z_alt, esp_muro){
+    largo = segmento_largo(p0, p1);
+    ang = segmento_angulo(p0, p1);
+
+    if (largo > 0)
+        translate([p0[0], p0[1], 0])
+            rotate([0, 0, ang])
+                translate([0, -esp_muro/2, 0])
+                    cube([largo, esp_muro, z_alt]);
+}
+
+module muro_segmento_con_huecos(p0, p1, z_alt, esp_muro, huecos=[]){
+    largo = segmento_largo(p0, p1);
+    ang = segmento_angulo(p0, p1);
+
+    if (largo > 0)
+        translate([p0[0], p0[1], 0])
+            rotate([0, 0, ang])
+                difference() {
+                    translate([0, -esp_muro/2, 0])
+                        cube([largo, esp_muro, z_alt]);
+
+                    for (h = huecos)
+                        translate([h[0], -esp_muro/2 - 1, 0])
+                            cube([h[1], esp_muro + 2, h[2]]);
+                }
+}
+
+module viga_segmento(p0, p1, z_inf){
+    largo = segmento_largo(p0, p1);
+    ang = segmento_angulo(p0, p1);
+
+    if (largo > 0)
+        translate([p0[0], p0[1], z_inf])
+            rotate([0, 0, ang])
+                translate([0, -viga_b/2, 0])
+                    tubo(largo, viga_b, viga_h, viga_esp);
+}
+
+module sec_segmento(p0, p1, z_inf){
+    largo = segmento_largo(p0, p1);
+    ang = segmento_angulo(p0, p1);
+
+    if (largo > 0)
+        translate([p0[0], p0[1], z_inf])
+            rotate([0, 0, ang])
+                translate([0, -sec_ext/2, 0])
+                    tubo(largo, sec_ext, sec_ext, sec_esp);
+}
+
+module tablero_poligonal(points, z_inf){
+    losa_poligonal(points, tablero_esp, z_inf);
+}
+
+module laminado_poligonal(points, z_inf){
+    losa_poligonal(points, laminado_esp, z_inf);
+}
+
 module muro_y_con_hueco(x_ini, x_fin, y, z_alt, esp_muro, hueco_x_centro, hueco_ancho, hueco_alto){
     difference() {
         translate([x_ini, y, 0])

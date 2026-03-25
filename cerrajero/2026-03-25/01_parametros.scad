@@ -3,11 +3,25 @@
 altura_grande  = 1600;
 altura_pequena = 2000;
 
-L_hab = 3460;
-W_hab = 4200;
+// Habitacion medida en obra.
+// Referencias de orientacion:
+// - Oeste: pared de las puertas.
+// - Sur: pared de la escalera y retorno de la cocina.
+// - Norte: pared opuesta al retorno de cocina.
+// - Este: pared opuesta a las puertas.
+pared_oeste_largo = 3830;
+pared_sur_largo   = 4180;
+pared_norte_largo = 4170;
+pared_este_largo  = 3570;
+
+// En el modelo actual mantenemos el sistema XY historico:
+// - El borde superior del dibujo corresponde a la pared oeste.
+// - El lateral izquierdo corresponde a la pared sur.
+L_hab = pared_oeste_largo;
+W_hab = pared_sur_largo;
 H_hab = 3500;
 hab_muro_esp = 100;
-puerta_ancho = 900;
+puerta_ancho = 800;
 puerta_alto  = 2000;
 puerta_bano_sep   = 200;
 puerta_bano_ancho = 700;
@@ -17,8 +31,8 @@ bano_fondo = 1600;
 L1 = 3460;
 W1 = 2200;   // plataforma grande
 
-L2 = 2000;
-W2 = 2000;   // plataforma pequena
+L2 = 1900;
+W2 = 2000;   // referencia inicial para cama; la geometria real no sera rectangular
 
 pilar_ext = 80;
 pilar_esp = 3;
@@ -90,6 +104,7 @@ ver_placas_base  = true;
 ver_escalera     = true;
 ver_vol_esc      = false;
 ver_etiquetas_pilares = false;
+ver_etiquetas_paredes = false;
 ver_cotas        = false;
 ver_habitacion   = true;
 ver_techo        = true;
@@ -119,9 +134,16 @@ cocina_alto_zocalo = 100;
 cocina_alto_columna = 2300;
 cocina_alto_altos = 900;
 cocina_z_inferior_altos = 1450;
-cocina_lado_largo = 1800;
-cocina_retorno = 1200;
+// La pata del fondo, hacia la puerta del bano, es la mas corta.
+cocina_lado_largo = 1780;
+cocina_retorno = 1870;
 cocina_modulos_frente = 3;
+
+// Ajustes iniciales de estructura para la cama/plataforma superior
+cama_retranqueo_p9 = 120;
+cama_largo = 1900;
+cama_fondo = 2000;
+estructura_retranqueo_muro = 120;
 
 // Silueta humana de referencia
 silueta_h = 1750;

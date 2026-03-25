@@ -9,34 +9,24 @@ function cocina_parametros_layout() =
         cocina_y_ini = W_hab - retorno_real,
         x_col_fin = x1_min + modulo_frente,
         x_mod_2_fin = x_col_fin + modulo_frente,
-        x_mod_3_fin = x1_min + frente_cocina,
-        y_mod_cercano_ini = max(cocina_y_ini - 520, hueco_esc_y_max + 80),
-        y_mod_cercano_fin = cocina_y_ini + 80
+        x_mod_3_fin = x1_min + frente_cocina
     )
     [
         cocina_y_ini,
         x_col_fin,
         x_mod_2_fin,
-        x_mod_3_fin,
-        y_mod_cercano_ini,
-        y_mod_cercano_fin
+        x_mod_3_fin
     ];
 
 module cocina_frente_principal(x_col_fin, x_mod_2_fin, x_mod_3_fin) {
-    // Frente principal aproximado a tres modulos: columna + dos modulos de trabajo.
-    columna_cocina_rect(
-        x1_min, x_col_fin,
-        W_hab - cocina_fondo, W_hab,
-        0, cocina_alto_columna
-    );
-
+    // Frente principal en dos modulos bajos, sin columna.
     mueble_bajo_rect(
-        x_col_fin, x_mod_2_fin,
+        x1_min, x_mod_2_fin,
         W_hab - cocina_fondo, W_hab,
         0, cocina_alto_cuerpo, cocina_encimera_esp
     );
     electrodomestico_frontal(
-        x_col_fin, x_mod_2_fin,
+        x1_min, x_mod_2_fin,
         W_hab - cocina_fondo, W_hab,
         0, cocina_alto_cuerpo - 30
     );
@@ -53,21 +43,11 @@ module cocina_frente_principal(x_col_fin, x_mod_2_fin, x_mod_3_fin) {
     );
 }
 
-module cocina_retorno(cocina_y_ini, y_mod_cercano_ini, y_mod_cercano_fin) {
-    // Retorno en L para aproximar el fregadero y apoyo lateral.
+module cocina_retorno(cocina_y_ini) {
+    // Retorno en L para aproximar el fregadero y apoyo lateral, sin modulos sueltos ni muebles altos.
     mueble_bajo_rect(
         x1_min, x1_min + cocina_fondo,
         cocina_y_ini, W_hab,
-        0, cocina_alto_cuerpo, cocina_encimera_esp
-    );
-    mueble_alto_rect(
-        x1_min, x1_min + cocina_fondo_altos,
-        cocina_y_ini + 120, W_hab,
-        cocina_z_inferior_altos, cocina_alto_altos
-    );
-    mueble_bajo_rect(
-        x1_min, x1_min + cocina_fondo,
-        y_mod_cercano_ini, y_mod_cercano_fin,
         0, cocina_alto_cuerpo, cocina_encimera_esp
     );
     fregadero_encimera(
@@ -84,9 +64,7 @@ module capa_cocina() {
     x_col_fin = layout[1];
     x_mod_2_fin = layout[2];
     x_mod_3_fin = layout[3];
-    y_mod_cercano_ini = layout[4];
-    y_mod_cercano_fin = layout[5];
 
     cocina_frente_principal(x_col_fin, x_mod_2_fin, x_mod_3_fin);
-    cocina_retorno(cocina_y_ini, y_mod_cercano_ini, y_mod_cercano_fin);
+    cocina_retorno(cocina_y_ini);
 }

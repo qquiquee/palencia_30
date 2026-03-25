@@ -22,15 +22,15 @@ module capa_cartelas() {
         cartelaXZ(x1_max - pilar_ext/2, y1_max + pilar_ext/2 - cartela_retr, z_viga_grande + viga_h - cartela_retr,
                   ala=cartela_ala, esp=cartela_esp, sx=-1, sz=-1);
 
-        // Plataforma pequena: dos esquinas exteriores
-        cartelaYZ(x_p8 - pilar_ext/2 + cartela_retr, y2_max - pilar_ext/2, z_viga_pequena + viga_h - cartela_retr,
+        // Cama/plataforma superior: dos esquinas de pared
+        cartelaYZ(p8_x - pilar_ext/2 + cartela_retr, p8_y - pilar_ext/2, z_viga_pequena + viga_h - cartela_retr,
                   ala=220, esp=cartela_esp, sy=-1, sz=-1);
-        cartelaXZ(x_p8 + pilar_ext/2, y2_max + pilar_ext/2 - cartela_retr, z_viga_pequena + viga_h - cartela_retr,
+        cartelaXZ(p8_x + pilar_ext/2, p8_y + pilar_ext/2 - cartela_retr, z_viga_pequena + viga_h - cartela_retr,
                   ala=220, esp=cartela_esp, sx=1, sz=-1);
 
-        cartelaYZ(x2_max + pilar_ext/2 - cartela_retr, y2_max - pilar_ext/2, z_viga_pequena + viga_h - cartela_retr,
+        cartelaYZ(p5_x + pilar_ext/2 - cartela_retr, p5_y - pilar_ext/2, z_viga_pequena + viga_h - cartela_retr,
                   ala=220, esp=cartela_esp, sy=-1, sz=-1);
-        cartelaXZ(x2_max - pilar_ext/2, y2_max + pilar_ext/2 - cartela_retr, z_viga_pequena + viga_h - cartela_retr,
+        cartelaXZ(p5_x - pilar_ext/2, p5_y + pilar_ext/2 - cartela_retr, z_viga_pequena + viga_h - cartela_retr,
                   ala=220, esp=cartela_esp, sx=-1, sz=-1);
     }
 }
@@ -88,17 +88,23 @@ module capa_hueco() {
 }
 
 module capa_habitacion() {
-    puerta_principal_x_centro = x2_max - puerta_ancho/2;
-    puerta_bano_x_centro = x2_max - puerta_ancho - puerta_bano_sep - puerta_bano_ancho/2;
-    puerta_bano_x_der = x2_max - puerta_ancho - puerta_bano_sep;
+    puerta_principal_x_centro = L_hab - puerta_ancho/2;
+    puerta_bano_x_centro = L_hab - puerta_ancho - puerta_bano_sep - puerta_bano_ancho/2;
+    puerta_bano_x_der = L_hab - puerta_ancho - puerta_bano_sep;
     bano_x_max = puerta_bano_x_der;
     bano_x_min = 0;
+    huecos_oeste = [
+        [puerta_principal_x_centro - puerta_ancho/2, puerta_ancho, puerta_alto],
+        [puerta_bano_x_centro - puerta_bano_ancho/2, puerta_bano_ancho, puerta_bano_alto]
+    ];
 
-    caja_habitacion(
-        0, L_hab, 0, W_hab, H_hab, hab_muro_esp,
-        puerta_principal_x_centro, puerta_ancho, puerta_alto,
-        puerta_bano_x_centro, puerta_bano_ancho, puerta_bano_alto
-    );
+    color([1,1,1]) {
+        losa_poligonal(hab_contorno, 8);
+        muro_segmento(hab_pared_sur_a, hab_pared_sur_b, H_hab, hab_muro_esp);
+        muro_segmento_con_huecos(hab_pared_oeste_a, hab_pared_oeste_b, H_hab, hab_muro_esp, huecos_oeste);
+        muro_segmento(hab_pared_norte_a, hab_pared_norte_b, H_hab, hab_muro_esp);
+        muro_segmento(hab_pared_este_a, hab_pared_este_b, H_hab, hab_muro_esp);
+    }
 
     caja_anexo_exterior(
         bano_x_min, bano_x_max,
@@ -110,9 +116,10 @@ module capa_habitacion() {
 }
 
 module capa_techo() {
-    puerta_bano_x_der = x2_max - puerta_ancho - puerta_bano_sep;
+    puerta_bano_x_der = L_hab - puerta_ancho - puerta_bano_sep;
 
-    techo_rect(0, L_hab, 0, W_hab, H_hab, hab_muro_esp);
+    color([1,1,1])
+        losa_poligonal(hab_contorno, hab_muro_esp, H_hab);
     techo_rect(0, puerta_bano_x_der, W_hab, W_hab + bano_fondo, H_hab, hab_muro_esp);
 }
 
@@ -179,19 +186,37 @@ module etiqueta_pilar(txt, x, y, dx=etiqueta_pilar_dx, dy=etiqueta_pilar_dy, z=e
                 text(txt, size=etiqueta_pilar_tam, halign="center", valign="center");
 }
 
+module etiqueta_pared(txt, p0, p1, z=40) {
+    centro = segmento_centro(p0, p1);
+    ang = segmento_angulo(p0, p1);
+
+    color([0.10,0.35,0.80])
+        translate([centro[0], centro[1], z])
+            rotate([90, 0, ang])
+                linear_extrude(height=2)
+                    text(txt, size=90, halign="center", valign="center");
+}
+
 module capa_etiquetas_pilares() {
     etiqueta_pilar("P1", x1_min,            y1_min,            70,  90);
     etiqueta_pilar("P2", x1_min,            esc_recta_y_llegada, 70,  90);
     etiqueta_pilar("P3", esc_recta_x_fin,   y1_min,           -70,  90);
     etiqueta_pilar("P4", hueco_esc_x_max,   hueco_esc_y_max,  -70, -90);
-    etiqueta_pilar("P5", x1_max,            y1_min,           -70,  90);
-    etiqueta_pilar("P6", x1_max,            y1_max,           -70, -90);
+    etiqueta_pilar("P5", p5_x,              p5_y,             -70, -90);
+    etiqueta_pilar("P6", p6_x,              p6_y,             -70, -90);
     etiqueta_pilar("P7", (x1_min+x1_max)/2, y1_min,             0,  90);
 
-    etiqueta_pilar("P8",  x_p8,  y2_max,   70, -90);
-    etiqueta_pilar("P9",  x2_max, y2_max,  -70, -90);
+    etiqueta_pilar("P8",  p8_x, p8_y,      70, -90);
+    etiqueta_pilar("P9",  p9_x, p9_y,      70, -90);
     etiqueta_pilar("P10", x2_min, y2_min,   70,  90);
     etiqueta_pilar("P11", x2_max, y2_min,  -70,  90);
+}
+
+module capa_etiquetas_paredes() {
+    etiqueta_pared("SUR", hab_pared_sur_a, hab_pared_sur_b);
+    etiqueta_pared("OESTE", hab_pared_oeste_a, hab_pared_oeste_b);
+    etiqueta_pared("NORTE", hab_pared_norte_a, hab_pared_norte_b);
+    etiqueta_pared("ESTE", hab_pared_este_a, hab_pared_este_b);
 }
 
 module capa_cotas() {

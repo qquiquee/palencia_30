@@ -18,17 +18,11 @@ module ensamblaje() {
 
     if (ver_suelo) {
         color([0.68,0.50,0.32]) {
-            tablero_rect(x1_min, x1_max, y1_min, hueco_esc_y_min, z_sup_grande);
-            tablero_rect(hueco_esc_x_max, x1_max, y1_min, hueco_esc_y_max, z_sup_grande);
-            tablero_rect(x1_min, x1_max, hueco_esc_y_max, y1_max, z_sup_grande);
-            tablero_rect(x2_min,      x2_max, y2_min,      y2_max,      z_sup_pequena);
+            capa_tableros();
         }
 
         color([0.82,0.70,0.50]) {
-            laminado_rect(x1_min, x1_max, y1_min, hueco_esc_y_min, z_sup_grande + tablero_esp);
-            laminado_rect(hueco_esc_x_max, x1_max, y1_min, hueco_esc_y_max, z_sup_grande + tablero_esp);
-            laminado_rect(x1_min, x1_max, hueco_esc_y_max, y1_max, z_sup_grande + tablero_esp);
-            laminado_rect(x2_min,      x2_max, y2_min,      y2_max,      z_sup_pequena + tablero_esp);
+            capa_laminados();
         }
     }
 
@@ -52,6 +46,9 @@ module ensamblaje() {
 
     if (ver_etiquetas_pilares)
         capa_etiquetas_pilares();
+
+    if (ver_etiquetas_paredes)
+        capa_etiquetas_paredes();
 
     if (ver_cotas)
         capa_cotas();

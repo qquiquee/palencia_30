@@ -11,6 +11,7 @@ include <07_capas_detalle.scad>;
 include <08_ensamblaje.scad>;
 include <09_modulos_cocina.scad>;
 include <10_capas_cocina.scad>;
+include <11_capas_despacho.scad>;
 
 // =====================================================
 // VISIBILIDAD EDITABLE A MANO
@@ -31,6 +32,7 @@ ver_cotas        = false;
 ver_habitacion   = false;
 ver_techo        = false;
 ver_cocina       = true;
+ver_despacho     = true;
 ver_silueta      = true;
 
 ensamblaje();

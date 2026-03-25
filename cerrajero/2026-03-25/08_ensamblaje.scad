@@ -41,6 +41,9 @@ module ensamblaje() {
     if (ver_cocina)
         capa_cocina();
 
+    if (ver_despacho)
+        color([0.73,0.60,0.42]) capa_despacho();
+
     if (ver_silueta)
         capa_silueta();
 

@@ -130,3 +130,18 @@ hueco_esc_y_max = esc_recta_y_fin;
 // El apoyo visto de la cama coincide con el pilar central de la plataforma baja.
 apoyo_cama_x = plataforma_grande_se[0];
 apoyo_cama_y = plataforma_grande_se[1];
+
+// Despacho: tablero simple de 700x1400 pegado a la viga sur y al lado de la cama.
+desk_desplazamiento_sur = -500;
+desk_base_sur = punto_en_segmento(plataforma_grande_se, plataforma_grande_ne, desk_desplazamiento_sur);
+desk_p0 = desk_base_sur;
+desk_p1 = punto_en_segmento(desk_base_sur, [desk_base_sur[0] + (plataforma_grande_sw[0] - plataforma_grande_se[0]), desk_base_sur[1] + (plataforma_grande_sw[1] - plataforma_grande_se[1])], despacho_tablero_largo);
+desk_p0_in = punto_en_segmento(desk_base_sur, [desk_base_sur[0] + (plataforma_grande_ne[0] - plataforma_grande_se[0]), desk_base_sur[1] + (plataforma_grande_ne[1] - plataforma_grande_se[1])], despacho_tablero_ancho);
+desk_p1_in = punto_en_segmento(
+    desk_p1,
+    [
+        desk_p1[0] + (plataforma_grande_ne[0] - plataforma_grande_se[0]),
+        desk_p1[1] + (plataforma_grande_ne[1] - plataforma_grande_se[1])
+    ],
+    despacho_tablero_ancho
+);

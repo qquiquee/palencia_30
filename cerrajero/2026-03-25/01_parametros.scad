@@ -109,6 +109,7 @@ ver_cotas        = false;
 ver_habitacion   = true;
 ver_techo        = true;
 ver_cocina       = true;
+ver_despacho     = true;
 ver_silueta      = false;
 
 // Etiquetas de referencia
@@ -149,6 +150,11 @@ estructura_retranqueo_muro = 120;
 silueta_h = 1750;
 silueta_cuerpo_d = 260;
 silueta_cabeza_d = 220;
+
+// Despacho
+despacho_alto_tablero = 720;
+despacho_tablero_ancho = 1000;
+despacho_tablero_largo = 1400;
 
 // Parametros escalera de caracol
 esc_d_ext = 1100;

@@ -97,9 +97,21 @@ module tramo_barandilla_segmento_bajo_tablero(p0, p1, z_base, z_tablero) {
 module capa_barandillas() {
     desk_bar_p0 = punto_en_segmento(desk_p0, desk_p0_in, 500);
     desk_bar_p1 = punto_en_segmento(desk_p1, desk_p1_in, 500);
+    cama_bar_paso_norte = 60;
+    cama_bar_p0 = punto_en_segmento(cama_nw, cama_sw, cama_bar_paso_norte);
+    cama_bar_p1 = cama_sw;
+    cama_bar_este_largo = 1100;
+    cama_bar_este_p1 = cama_se;
+    cama_bar_este_p0 = punto_en_segmento(cama_se, cama_ne, cama_bar_este_largo);
 
     // Cama: borde libre hacia la cocina, siguiendo la viga sur.
     tramo_barandilla_segmento(cama_sw, cama_se, z_bar_pequena, bar_h);
+
+    // Cama: barandilla corta hacia el despacho, dejando paso junto a la pared norte.
+    tramo_barandilla_segmento(cama_bar_p0, cama_bar_p1, z_bar_pequena, bar_h);
+
+    // Cama: barandilla corta en el otro lado, dejando el mismo paso junto a la pared norte.
+    tramo_barandilla_segmento(cama_bar_este_p0, cama_bar_este_p1, z_bar_pequena, bar_h);
 
     // Despacho: barandilla baja bajo el tablero para retener en la viga sur.
     tramo_barandilla_segmento_bajo_tablero(

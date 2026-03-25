@@ -38,17 +38,9 @@ z_bar_grande = z_suelo_grande;
 z_bar_pequena = z_suelo_pequena;
 h_barrotes = bar_h - rodapie_h - bar_pasamanos_h;
 
-// Escalera recta con un pequeño retranqueo para ganar descansillo
-esc_recta_x_ini = x1_min;
-esc_recta_x_fin = esc_recta_x_ini + ancho_escalera;
-esc_recta_y_llegada = y1_min + 250;
+// Escalera recta prevista dentro de la reforma interior.
 esc_recta_largo = esc_recta_huella * esc_recta_num_peldanos;
-
-// Hueco de escalera en plataforma baja
-hueco_esc_x_min = esc_recta_x_ini;
-hueco_esc_x_max = esc_recta_x_fin;
-hueco_esc_y_min = esc_recta_y_llegada;
-hueco_esc_y_max = hueco_esc_y_min + esc_recta_largo;
+cocina_y_ini_fijo = W_hab - cocina_retorno;
 
 // Perimetro de la habitacion segun medicion, desacoplado de la estructura.
 hab_pared_sur_a = [0, 0];
@@ -94,22 +86,25 @@ p8_y = cama_sw[1];
 p9_x = cama_se[0];
 p9_y = cama_se[1];
 
-// Plataforma grande baja ajustada al perimetro real y retranqueada de los muros.
-plataforma_grande_sw = [estructura_retranqueo_muro, estructura_retranqueo_muro];
-plataforma_grande_se_muro = hab_pared_este_a;
-plataforma_grande_se = [plataforma_grande_se_muro[0] - estructura_retranqueo_muro, plataforma_grande_se_muro[1] + estructura_retranqueo_muro];
-plataforma_grande_nw = [estructura_retranqueo_muro, W1 - estructura_retranqueo_muro];
-plataforma_grande_ne_muro = punto_en_y(hab_pared_norte_a, hab_pared_norte_b, W1 - estructura_retranqueo_muro);
-plataforma_grande_ne = [plataforma_grande_ne_muro[0] - estructura_retranqueo_muro, plataforma_grande_ne_muro[1]];
+// Plataforma inferior: arranca donde empieza la cama y baja hasta la pared este.
+// Se construye casi como un rectangulo en la misma familia geometrica.
+plataforma_grande_sw = punto_en_y(cama_sw, cama_se, estructura_retranqueo_muro);
+plataforma_grande_se = [p9_x, p9_y];
+plataforma_grande_ne = [p6_x, p6_y];
+plataforma_grande_nw = [
+    p6_x + (plataforma_grande_sw[0] - p9_x),
+    p6_y + (plataforma_grande_sw[1] - p9_y)
+];
 
-plataforma_grande_hueco_sw = [hueco_esc_x_max + estructura_retranqueo_muro/2, hueco_esc_y_min];
-plataforma_grande_hueco_nw = [hueco_esc_x_max + estructura_retranqueo_muro/2, hueco_esc_y_max];
-plataforma_grande_der_sw_muro = punto_en_y(hab_pared_norte_a, hab_pared_norte_b, hueco_esc_y_min);
-plataforma_grande_der_nw_muro = punto_en_y(hab_pared_norte_a, hab_pared_norte_b, hueco_esc_y_max);
-plataforma_grande_der_sw = [plataforma_grande_der_sw_muro[0] - estructura_retranqueo_muro, plataforma_grande_der_sw_muro[1]];
-plataforma_grande_der_nw = [plataforma_grande_der_nw_muro[0] - estructura_retranqueo_muro, plataforma_grande_der_nw_muro[1]];
+// La escalera va pegada a la pared este, lo mas al sur posible, y apoya en la viga sur.
+esc_recta_x_llegada = plataforma_grande_sw[0] + 260;
+esc_recta_x_ini = esc_recta_x_llegada - esc_recta_largo;
+esc_recta_y_ini = 0;
+esc_recta_y_fin = ancho_escalera;
+esc_recta_y_llegada = esc_recta_y_ini;
 
-pb_muro_sup_x = plataforma_grande_ne[0];
-pb_muro_sup_y = plataforma_grande_ne[1];
-pb_muro_inf_x = plataforma_grande_se[0];
-pb_muro_inf_y = plataforma_grande_se[1];
+// Volumen de comprobacion de la escalera.
+hueco_esc_x_min = esc_recta_x_ini;
+hueco_esc_x_max = esc_recta_x_llegada;
+hueco_esc_y_min = esc_recta_y_ini;
+hueco_esc_y_max = esc_recta_y_fin;

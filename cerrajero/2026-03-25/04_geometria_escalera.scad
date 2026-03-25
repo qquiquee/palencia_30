@@ -230,3 +230,107 @@ module escalera_recta_y(
         );
     }
 }
+
+module escalera_recta_x(
+    x_llegada=0,
+    y_ini=0,
+    z_llegada=1600,
+    ancho=900,
+    huella=280,
+    num_peldanos=9,
+    esp_peldano=8,
+    zanca_b=80,
+    zanca_h=200,
+    poste_d=16,
+    pasamanos_d=35
+){
+    alzada = z_llegada / num_peldanos;
+    x_ini = x_llegada - num_peldanos * huella;
+    x_fin = x_llegada;
+    h_bar = 900;
+    y_bar_izq = y_ini + 45;
+    y_bar_der = y_ini + ancho - 45;
+
+    color([0.35,0.35,0.38]) {
+        hull() {
+            translate([x_ini, y_ini + 35, 0])
+                cube([zanca_h, zanca_b, zanca_b]);
+            translate([x_fin - zanca_h, y_ini + 35, z_llegada - zanca_b])
+                cube([zanca_h, zanca_b, zanca_b]);
+        }
+
+        hull() {
+            translate([x_ini, y_ini + ancho - 35 - zanca_b, 0])
+                cube([zanca_h, zanca_b, zanca_b]);
+            translate([x_fin - zanca_h, y_ini + ancho - 35 - zanca_b, z_llegada - zanca_b])
+                cube([zanca_h, zanca_b, zanca_b]);
+        }
+    }
+
+    color([0.58,0.58,0.60])
+    for(i = [0:num_peldanos-1]){
+        x0 = x_fin - (i + 1) * huella;
+        z0 = z_llegada - i * alzada - esp_peldano;
+
+        translate([x0, y_ini, z0])
+            cube([huella, ancho, esp_peldano]);
+    }
+
+    color([0.45,0.45,0.48]) {
+        for(i = [0:num_peldanos-1]){
+            xp = x_fin - i * huella - huella/2;
+            zp = z_llegada - i * alzada;
+
+            translate([xp, y_bar_izq, zp])
+                cylinder(h=h_bar, d=poste_d, $fn=20);
+            translate([xp, y_bar_der, zp])
+                cylinder(h=h_bar, d=poste_d, $fn=20);
+        }
+
+        translate([x_fin, y_bar_izq, z_llegada + esp_peldano])
+            cylinder(h=h_bar, d=poste_d, $fn=20);
+        translate([x_fin, y_bar_der, z_llegada + esp_peldano])
+            cylinder(h=h_bar, d=poste_d, $fn=20);
+
+        translate([x_ini, y_bar_izq, esp_peldano])
+            cylinder(h=h_bar, d=poste_d, $fn=20);
+        translate([x_ini, y_bar_der, esp_peldano])
+            cylinder(h=h_bar, d=poste_d, $fn=20);
+    }
+
+    color([0.72,0.72,0.74]) {
+        for(i = [0:num_peldanos-2]){
+            p1_izq = [x_fin - i * huella - huella/2, y_bar_izq, z_llegada - i * alzada + h_bar];
+            p2_izq = [x_fin - (i + 1) * huella - huella/2, y_bar_izq, z_llegada - (i + 1) * alzada + h_bar];
+            pasamanos_tramo(p1_izq, p2_izq, d=pasamanos_d);
+
+            p1_der = [x_fin - i * huella - huella/2, y_bar_der, z_llegada - i * alzada + h_bar];
+            p2_der = [x_fin - (i + 1) * huella - huella/2, y_bar_der, z_llegada - (i + 1) * alzada + h_bar];
+            pasamanos_tramo(p1_der, p2_der, d=pasamanos_d);
+        }
+
+        pasamanos_tramo(
+            [x_fin, y_bar_izq, z_llegada + esp_peldano + h_bar],
+            [x_fin - huella/2, y_bar_izq, z_llegada + h_bar],
+            d=pasamanos_d
+        );
+
+        pasamanos_tramo(
+            [x_fin, y_bar_der, z_llegada + esp_peldano + h_bar],
+            [x_fin - huella/2, y_bar_der, z_llegada + h_bar],
+            d=pasamanos_d
+        );
+
+        pasamanos_tramo(
+            [x_ini + huella/2, y_bar_izq, z_llegada - (num_peldanos - 1) * alzada + h_bar],
+            [x_ini, y_bar_izq, esp_peldano + h_bar],
+            d=pasamanos_d
+        );
+
+        pasamanos_tramo(
+            [x_ini + huella/2, y_bar_der, z_llegada - (num_peldanos - 1) * alzada + h_bar],
+            [x_ini, y_bar_der, esp_peldano + h_bar],
+            d=pasamanos_d
+        );
+    }
+}

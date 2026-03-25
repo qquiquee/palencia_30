@@ -140,9 +140,9 @@ module capa_silueta() {
 }
 
 module capa_escalera(){
-    escalera_recta_y(
-        x_ini=esc_recta_x_ini,
-        y_llegada=esc_recta_y_llegada,
+    escalera_recta_x(
+        x_llegada=esc_recta_x_llegada,
+        y_ini=esc_recta_y_ini,
         z_llegada=z_sup_grande,
         ancho=ancho_escalera,
         huella=esc_recta_huella,

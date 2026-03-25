@@ -81,23 +81,39 @@ p5_x = cama_nw[0];
 p5_y = cama_nw[1];
 p6_x = cama_ne[0];
 p6_y = cama_ne[1];
-p8_x = cama_sw[0];
-p8_y = cama_sw[1];
+p8_retranqueo_norte = 700;
+p8_pos = punto_en_segmento(cama_sw, cama_nw, p8_retranqueo_norte);
+p8_x = p8_pos[0];
+p8_y = p8_pos[1];
 p9_x = cama_se[0];
 p9_y = cama_se[1];
 
 // Plataforma inferior: arranca donde empieza la cama y baja hasta la pared este.
 // Se construye casi como un rectangulo en la misma familia geometrica.
-plataforma_grande_sw = punto_en_y(cama_sw, cama_se, estructura_retranqueo_muro);
-plataforma_grande_se = [p9_x, p9_y];
+plataforma_grande_sw_base = punto_en_y(cama_sw, cama_se, estructura_retranqueo_muro);
+plataforma_grande_se_base = [p9_x, p9_y];
 plataforma_grande_ne = [p6_x, p6_y];
-plataforma_grande_nw = [
-    p6_x + (plataforma_grande_sw[0] - p9_x),
-    p6_y + (plataforma_grande_sw[1] - p9_y)
+plataforma_grande_nw_base = [
+    p6_x + (plataforma_grande_sw_base[0] - p9_x),
+    p6_y + (plataforma_grande_sw_base[1] - p9_y)
 ];
 
+// La viga sur se retranquea 700 mm hacia el norte y arrastra la esquina interior.
+plataforma_retranqueo_sur = 700;
+plataforma_grande_sw = punto_en_segmento(
+    plataforma_grande_sw_base,
+    plataforma_grande_nw_base,
+    plataforma_retranqueo_sur
+);
+plataforma_grande_se = punto_en_segmento(
+    plataforma_grande_se_base,
+    plataforma_grande_ne,
+    plataforma_retranqueo_sur
+);
+plataforma_grande_nw = plataforma_grande_nw_base;
+
 // La escalera va pegada a la pared este, lo mas al sur posible, y apoya en la viga sur.
-esc_recta_x_llegada = plataforma_grande_sw[0] + 260;
+esc_recta_x_llegada = (plataforma_grande_sw[0] + plataforma_grande_se[0]) / 2;
 esc_recta_x_ini = esc_recta_x_llegada - esc_recta_largo;
 esc_recta_y_ini = 0;
 esc_recta_y_fin = ancho_escalera;
@@ -108,3 +124,7 @@ hueco_esc_x_min = esc_recta_x_ini;
 hueco_esc_x_max = esc_recta_x_llegada;
 hueco_esc_y_min = esc_recta_y_ini;
 hueco_esc_y_max = esc_recta_y_fin;
+
+// El apoyo visto de la cama coincide con el pilar central de la plataforma baja.
+apoyo_cama_x = plataforma_grande_se[0];
+apoyo_cama_y = plataforma_grande_se[1];

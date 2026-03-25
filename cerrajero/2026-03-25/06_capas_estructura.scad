@@ -11,8 +11,7 @@ module capa_pilares() {
     pilarC(p8_x, p8_y, altura_pequena);
 
     pilar_sin_baseC(p6_x, p6_y, z_apoyo_sup, h_apoyo_sup);
-    pilar_sin_baseC(p9_x, p9_y, z_apoyo_sup, h_apoyo_sup);
-    pilar_sin_baseC(cama_sw[0] + 180, cama_sw[1] - 120, z_apoyo_sup, h_apoyo_sup);
+    pilar_sin_baseC(apoyo_cama_x, apoyo_cama_y, z_apoyo_sup, h_apoyo_sup);
 }
 
 module capa_vigas() {
@@ -27,7 +26,6 @@ module capa_vigas() {
     viga_segmento(cama_nw, cama_sw, z_viga_pequena);
     viga_segmento(cama_sw, cama_se, z_viga_pequena);
     viga_segmento(cama_ne, cama_se, z_viga_pequena);
-    viga_segmento(cama_sw, cama_ne, z_viga_pequena);
 }
 
 module capa_secundarios() {
